@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Snake en ligne</title>
+<style>
+  :root{
+    --bg-1:#0f172a;
+    --bg-2:#1e293b;
+    --accent:#22c55e;
+    --accent-2:#4ade80;
+    --food:#f97316;
+    --grid:#1e293b;
+    --text:#e2e8f0;
+    --muted:#94a3b8;
+    --danger:#ef4444;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;
+    padding:0;
+    height:100%;
+    background:radial-gradient(circle at 50% 0%, var(--bg-2), var(--bg-1));
+    color:var(--text);
+    font-family:'Segoe UI', Roboto, Arial, sans-serif;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+  }
+  .wrap{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:14px;
+    padding:16px;
+    width:100%;
+    max-width:520px;
+  }
+  h1{
+    margin:0;
+    font-size:1.6rem;
+    letter-spacing:1px;
+    background:linear-gradient(90deg, var(--accent-2), #38bdf8);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+  }
+  .hud{
+    display:flex;
+    justify-content:space-between;
+    width:100%;
+    font-size:0.95rem;
+    color:var(--muted);
+  }
+  .hud span{color:var(--text); font-weight:600;}
+  #gameCanvas{
+    background:#0b1220;
+    border:2px solid #334155;
+    border-radius:10px;
+    box-shadow:0 0 25px rgba(34,197,94,0.15), inset 0 0 20px rgba(0,0,0,0.5);
+    width:100%;
+    max-width:480px;
+    height:auto;
+    aspect-ratio:1/1;
+    touch-action:none;
+  }
+  .controls{
+    display:none;
+    grid-template-columns:repeat(3, 60px);
+    grid-template-rows:repeat(2, 60px);
+    gap:8px;
+    margin-top:6px;
+  }
+  .controls button{
+    background:#1e293b;
+    border:1px solid #334155;
+    color:var(--text);
+    font-size:1.4rem;
+    border-radius:10px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    user-select:none;
+    touch-action:manipulation;
+  }
+  .controls button:active{background:var(--accent); color:#0b1220;}
+  #up{grid-column:2; grid-row:1;}
+  #left{grid-column:1; grid-row:2;}
+  #down{grid-column:2; grid-row:2;}
+  #right{grid-column:3; grid-row:2;}
+
+  .overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(2,6,23,0.85);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap:16px;
+    text-align:center;
+    padding:20px;
+    z-index:10;
+  }
+  .overlay.show{display:flex;}
+  .overlay h2{margin:0; font-size:1.8rem; color:var(--danger);}
+  .overlay p{margin:0; color:var(--muted);}
+  button.action{
+    background:linear-gradient(135deg, var(--accent), #16a34a);
+    color:#04140a;
+    border:none;
+    padding:12px 28px;
+    border-radius:30px;
+    font-size:1.05rem;
+    font-weight:700;
+    cursor:pointer;
+    box-shadow:0 4px 15px rgba(34,197,94,0.4);
+    transition:transform .15s ease;
+  }
+  button.action:hover{transform:translateY(-2px);}
+  .hint{
+    color:var(--muted);
+    font-size:0.85rem;
+    text-align:center;
+  }
+  @media (max-width:600px){
+    .controls{display:grid;}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🐍 SNAKE</h1>
+    <div class="hud">
+      <div>Score: <span id="score">0</span></div>
+      <div>Meilleur score: <span id="best">0</span></div>
+    </div>
+    <canvas id="gameCanvas" width="480" height="480"></canvas>
+    <div class="controls">
+      <button id="up">▲</button>
+      <button id="left">◀</button>
+      <button id="down">▼</button>
+      <button id="right">▶</button>
+    </div>
+    <p class="hint">Flèches / ZQSD pour jouer sur ordinateur • boutons tactiles sur mobile</p>
+  </div>
+
+  <div class="overlay" id="startOverlay">
+    <h2 style="color:var(--accent-2);">Prêt à jouer ?</h2>
+    <p>Mange les fruits, évite les murs et ta propre queue.</p>
+    <button class="action" id="startBtn">Commencer</button>
+  </div>
+
+  <div class="overlay" id="gameOverOverlay">
+    <h2>Partie terminée</h2>
+    <p id="finalScore">Score : 0</p>
+    <button class="action" id="restartBtn">Rejouer</button>
+  </div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const startOverlay = document.getElementById('startOverlay');
+  const gameOverOverlay = document.getElementById('gameOverOverlay');
+  const finalScoreEl = document.getElementById('finalScore');
+
+  const GRID = 20;
+  const CELLS = canvas.width / GRID;
+
+  let snake, direction, nextDirection, food, score, best, gameLoop, speed, running;
+
+  best = Number(localStorage.getItem('snakeBest') || 0);
+  bestEl.textContent = best;
+
+  function resetState(){
+    snake = [
+      {x: 8, y: 10},
+      {x: 7, y: 10},
+      {x: 6, y: 10}
+    ];
+    direction = 'right';
+    nextDirection = 'right';
+    score = 0;
+    speed = 130;
+    scoreEl.textContent = score;
+    placeFood();
+  }
+
+  function placeFood(){
+    let valid = false;
+    while(!valid){
+      food = {
+        x: Math.floor(Math.random() * CELLS),
+        y: Math.floor(Math.random() * CELLS)
+      };
+      valid = !snake.some(s => s.x === food.x && s.y === food.y);
+    }
+  }
+
+  function drawCell(x, y, color, radius){
+    ctx.fillStyle = color;
+    const px = x * GRID, py = y * GRID;
+    const r = radius || 5;
+    ctx.beginPath();
+    ctx.moveTo(px + r, py);
+    ctx.arcTo(px + GRID, py, px + GRID, py + GRID, r);
+    ctx.arcTo(px + GRID, py + GRID, px, py + GRID, r);
+    ctx.arcTo(px, py + GRID, px, py, r);
+    ctx.arcTo(px, py, px + GRID, py, r);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function draw(){
+    ctx.fillStyle = '#0b1220';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // grille subtile
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    for(let i=0;i<=CELLS;i++){
+      ctx.beginPath();
+      ctx.moveTo(i*GRID,0); ctx.lineTo(i*GRID, canvas.height); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0,i*GRID); ctx.lineTo(canvas.width, i*GRID); ctx.stroke();
+    }
+
+    // nourriture
+    drawCell(food.x, food.y, '#f97316', 8);
+
+    // serpent
+    snake.forEach((seg, i) => {
+      const color = i === 0 ? '#4ade80' : '#22c55e';
+      drawCell(seg.x, seg.y, color, i === 0 ? 8 : 5);
+    });
+  }
+
+  function update(){
+    direction = nextDirection;
+    const head = {...snake[0]};
+
+    if(direction === 'up') head.y -= 1;
+    if(direction === 'down') head.y += 1;
+    if(direction === 'left') head.x -= 1;
+    if(direction === 'right') head.x += 1;
+
+    // collision murs
+    if(head.x < 0 || head.x >= CELLS || head.y < 0 || head.y >= CELLS){
+      return endGame();
+    }
+    // collision avec soi-meme
+    if(snake.some(seg => seg.x === head.x && seg.y === head.y)){
+      return endGame();
+    }
+
+    snake.unshift(head);
+
+    if(head.x === food.x && head.y === food.y){
+      score += 10;
+      scoreEl.textContent = score;
+      if(speed > 60) speed -= 3;
+      placeFood();
+      restartLoop();
+    } else {
+      snake.pop();
+    }
+
+    draw();
+  }
+
+  function restartLoop(){
+    clearInterval(gameLoop);
+    gameLoop = setInterval(update, speed);
+  }
+
+  function endGame(){
+    clearInterval(gameLoop);
+    running = false;
+    if(score > best){
+      best = score;
+      localStorage.setItem('snakeBest', best);
+      bestEl.textContent = best;
+    }
+    finalScoreEl.textContent = 'Score : ' + score;
+    gameOverOverlay.classList.add('show');
+  }
+
+  function startGame(){
+    resetState();
+    draw();
+    startOverlay.classList.remove('show');
+    gameOverOverlay.classList.remove('show');
+    running = true;
+    restartLoop();
+  }
+
+  function setDirection(dir){
+    const opposite = {up:'down', down:'up', left:'right', right:'left'};
+    if(!running) return;
+    if(opposite[dir] === direction) return;
+    nextDirection = dir;
+  }
+
+  // Clavier
+  window.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+    if(['arrowup','z','w'].includes(key)) setDirection('up');
+    else if(['arrowdown','s'].includes(key)) setDirection('down');
+    else if(['arrowleft','q','a'].includes(key)) setDirection('left');
+    else if(['arrowright','d'].includes(key)) setDirection('right');
+    if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(key)) e.preventDefault();
+  });
+
+  // Boutons tactiles
+  document.getElementById('up').addEventListener('click', () => setDirection('up'));
+  document.getElementById('down').addEventListener('click', () => setDirection('down'));
+  document.getElementById('left').addEventListener('click', () => setDirection('left'));
+  document.getElementById('right').addEventListener('click', () => setDirection('right'));
+
+  // Swipe tactile sur le canvas
+  let touchStartX = 0, touchStartY = 0;
+  canvas.addEventListener('touchstart', (e) => {
+    touchStartX = e.changedTouches[0].screenX;
+    touchStartY = e.changedTouches[0].screenY;
+  }, {passive:true});
+  canvas.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].screenX - touchStartX;
+    const dy = e.changedTouches[0].screenY - touchStartY;
+    if(Math.abs(dx) > Math.abs(dy)){
+      setDirection(dx > 0 ? 'right' : 'left');
+    } else {
+      setDirection(dy > 0 ? 'down' : 'up');
+    }
+  }, {passive:true});
+
+  document.getElementById('startBtn').addEventListener('click', startGame);
+  document.getElementById('restartBtn').addEventListener('click', startGame);
+
+  // Etat initial
+  resetState();
+  draw();
+  startOverlay.classList.add('show');
+})();
+</script>
+</body>
+</html>
