@@ -62,12 +62,13 @@ function push(client, ax, ay, ms) {
 
   check('chaque joueur voit les autres', a.seen === 3, `${a.seen} joueurs`);
 
-  // Triche : dt gonfle
+  // Triche : dt gonfle. Sans garde-fou, 200 commandes x 5 s donneraient 260 000 px.
   const before = { x: a.last.x, y: a.last.y };
   for (let i = 0; i < 200; i++) a.socket.emit('input', { seq: ++a.seq, dt: 5, ax: 1, ay: 0 });
   await wait(500);
   const cheat = Math.hypot(a.last.x - before.x, a.last.y - before.y);
-  check('triche sur dt bornee', cheat < CONFIG.PLAYER.speed, `${cheat.toFixed(0)}px`);
+  const legitMax = CONFIG.PLAYER.speed * 1.5; // 500 ms de jeu + reserve de budget accumulee
+  check('triche sur dt bornee', cheat < legitMax, `${cheat.toFixed(0)}px (plafond ${legitMax}px, sans garde-fou 260000px)`);
 
   [a, b, c].forEach(p => p.socket.close());
   console.log(failures ? `\n${failures} echec(s)` : '\nTout est vert.');

@@ -23,7 +23,6 @@ public/js/net.js       Socket, buffer de snapshots, horloge serveur, latence
 public/js/input.js     Clavier ZQSD/WASD/flèches + joystick tactile
 public/js/render.js    Rendu canvas : sol, plots de dépôt, joueurs
 public/js/main.js      Boucle client : prédiction, réconciliation, interpolation
-public/snake.html      L'ancien mini-jeu Snake, conservé tel quel
 ```
 
 ### Modèle réseau
