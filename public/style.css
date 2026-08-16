@@ -114,3 +114,60 @@ button.link{
 @media (prefers-reduced-motion:reduce){
   button.action{transition:none;}
 }
+
+/* --- Ecran de chargement --- */
+#loadingScreen{
+  position:fixed;
+  inset:0;
+  background:radial-gradient(circle at 50% 30%, #1b1030, #05030c 75%);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:28px;
+  z-index:100;
+  overflow:hidden;
+}
+#loadingScreen.fade-out{
+  animation:fadeOutScreen .6s ease forwards;
+}
+@keyframes fadeOutScreen{
+  to{opacity:0; visibility:hidden;}
+}
+.loading-logo-wrap{
+  width:min(78vw, 420px);
+  animation:logoPulse 2.2s ease-in-out infinite;
+  filter:drop-shadow(0 0 25px rgba(168,85,247,0.45));
+}
+.loading-logo-wrap img{
+  width:100%;
+  height:auto;
+  display:block;
+}
+@keyframes logoPulse{
+  0%,100%{ transform:scale(1); filter:drop-shadow(0 0 18px rgba(168,85,247,0.35)); }
+  50%{ transform:scale(1.035); filter:drop-shadow(0 0 34px rgba(168,85,247,0.65)); }
+}
+.loading-bar-track{
+  width:min(70vw, 320px);
+  height:10px;
+  border-radius:8px;
+  background:rgba(255,255,255,0.08);
+  border:1px solid rgba(168,85,247,0.35);
+  overflow:hidden;
+  box-shadow:inset 0 0 8px rgba(0,0,0,0.5);
+}
+.loading-bar-fill{
+  height:100%;
+  width:0%;
+  border-radius:8px;
+  background:linear-gradient(90deg, #a855f7, #f97316);
+  box-shadow:0 0 12px rgba(168,85,247,0.7);
+  transition:width .18s ease;
+}
+.loading-text{
+  color:var(--muted);
+  font-size:0.9rem;
+  letter-spacing:2px;
+  text-transform:uppercase;
+}
