@@ -175,6 +175,7 @@ net.onWelcome = (data) => {
   drawAttrs(data.you.attrs);
 
   joined = true;
+  rosterSignature = ''; // force la reconstruction du roster pour la nouvelle session
   log(data.you.restored
     ? `${catalog.classes[data.you.classId].name} repris là où tu t'étais arrêté.`
     : `${self.name} entre sur le terrain en ${catalog.classes[data.you.classId].name}.`);
@@ -503,9 +504,17 @@ function isDropping(id) {
   return !!(mine && mine.st === 1);
 }
 
+let rosterSignature = ''; // evite de reconstruire (et de casser les clics sur) le roster a chaque frame
+
 function updateHud(players) {
   el('playerCount').textContent = players.length;
   el('ping').textContent = net.ping;
+
+  // Le roster ne change que quand quelqu'un rejoint/part/change de classe :
+  // le reconstruire a 60 fps detruirait les boutons sous le clic de l'utilisateur.
+  const signature = players.map(p => `${p.id}:${p.name}:${p.classId}`).join('|');
+  if (signature === rosterSignature) return;
+  rosterSignature = signature;
 
   const roster = el('roster');
   roster.innerHTML = '';
