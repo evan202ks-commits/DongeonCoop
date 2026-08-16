@@ -36,12 +36,18 @@ html,body{
 .hint-inline{letter-spacing:0;text-transform:none;font-weight:500;opacity:.7;margin-left:6px;}
 .stat{color:var(--muted);}
 .stat b{color:var(--text);font-weight:600;}
-#roster{list-style:none;margin:0;padding:0;max-height:38vh;overflow:auto;}
-#roster li{display:flex;align-items:center;gap:8px;padding:2px 0;}
-#roster li.tradable{cursor:pointer;border-radius:6px;}
-#roster li.tradable:hover{background:rgba(74,222,128,.12);}
+#roster{list-style:none;margin:0;padding:0;max-height:38vh;overflow:auto;pointer-events:auto;}
+#roster li{display:flex;align-items:center;gap:8px;padding:3px 0;}
 #roster .dot{width:9px;height:9px;border-radius:50%;flex:none;}
 #roster .me{color:var(--accent);font-weight:600;}
+#roster .roster-name{flex:1;}
+button.trade-btn{
+  flex:none;padding:3px 9px;border-radius:7px;cursor:pointer;
+  background:rgba(74,222,128,.12);border:1px solid var(--accent);color:var(--accent);
+  font-size:.68rem;font-weight:700;letter-spacing:.02em;
+}
+button.trade-btn:hover{background:rgba(74,222,128,.24);}
+button.trade-btn:active{transform:translateY(1px);}
 #log{max-width:280px;color:var(--muted);font-size:.8rem;}
 
 /* --- Inventaire --- */

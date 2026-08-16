@@ -515,16 +515,21 @@ function updateHud(players) {
     dot.className = 'dot';
     dot.style.background = p.color;
     const label = document.createElement('span');
+    label.className = 'roster-name';
     const cls = catalog && catalog.classes[p.classId] ? catalog.classes[p.classId].name : '';
     label.textContent = p.id === net.id ? `${p.name} (toi) — ${cls}` : `${p.name} — ${cls}`;
-    if (p.id === net.id) {
-      label.className = 'me';
-    } else {
-      li.className = 'tradable';
-      li.title = `Proposer un échange à ${p.name}`;
-      li.addEventListener('click', () => net.tradeRequest(p.id));
-    }
     li.append(dot, label);
+
+    if (p.id === net.id) {
+      label.classList.add('me');
+    } else {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'trade-btn';
+      btn.textContent = 'Échanger';
+      btn.addEventListener('click', () => net.tradeRequest(p.id));
+      li.appendChild(btn);
+    }
     roster.appendChild(li);
   }
 }
