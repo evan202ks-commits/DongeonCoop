@@ -12,6 +12,7 @@ export class Net {
     this.onWelcome = () => {};
     this.onInventory = () => {};
     this.onEvent = () => {};
+    this.onTrade = () => {};
   }
 
   connect(token, classId) {
@@ -47,6 +48,15 @@ export class Net {
     s.on('disconnect', () => this.onEvent('disconnect', {}));
     s.on('pong:check', (sentAt) => { this.ping = Date.now() - sentAt; });
 
+    // --- Echanges entre comptes ---
+    s.on('trade:incoming', (data) => this.onTrade('incoming', data));
+    s.on('trade:start', (data) => this.onTrade('start', data));
+    s.on('trade:update', (data) => this.onTrade('update', data));
+    s.on('trade:cancelled', (data) => this.onTrade('cancelled', data));
+    s.on('trade:done', (data) => this.onTrade('done', data));
+    s.on('trade:error', (msg) => this.onTrade('error', { msg }));
+    s.on('trade:notice', (msg) => this.onTrade('notice', { msg }));
+
     setInterval(() => s.connected && s.emit('ping:check', Date.now()), 2000);
   }
 
@@ -68,6 +78,27 @@ export class Net {
 
   requestSave() {
     if (this.socket && this.socket.connected) this.socket.emit('save');
+  }
+
+  // --- Echanges entre comptes ---
+  tradeRequest(targetId) {
+    if (this.socket && this.socket.connected) this.socket.emit('trade:request', targetId);
+  }
+
+  tradeRespond(accept) {
+    if (this.socket && this.socket.connected) this.socket.emit('trade:respond', accept);
+  }
+
+  tradeOffer(type, qty) {
+    if (this.socket && this.socket.connected) this.socket.emit('trade:offer', { type, qty });
+  }
+
+  tradeConfirm() {
+    if (this.socket && this.socket.connected) this.socket.emit('trade:confirm');
+  }
+
+  tradeCancel() {
+    if (this.socket && this.socket.connected) this.socket.emit('trade:cancel');
   }
 
   get latest() {

@@ -22,6 +22,10 @@ let joined = false;
 let mode = 'login';
 let lastFrame = performance.now();
 
+// --- Echanges entre comptes ---
+let incomingTrade = null;   // { fromId, fromName } en attente de reponse
+let activeTrade = null;     // { otherId, otherName, yourOffer, theirOffer, youConfirmed, theyConfirmed }
+
 const el = (id) => document.getElementById(id);
 
 // --- Simulation locale : doit rester identique a Room.applyInput cote serveur ---
@@ -186,6 +190,7 @@ net.onInventory = (data) => {
   if (data.picked) log(`+${data.picked.qty} ${data.picked.name}`);
   if (data.equipped) log(`${data.equipped} équipé.`);
   if (data.stats) el('pickups').textContent = data.stats.pickups || 0;
+  if (activeTrade) drawTrade(); // le sac affiché dans l'echange doit rester a jour
 };
 
 net.onEvent = (type, payload) => {
@@ -202,6 +207,125 @@ net.onEvent = (type, payload) => {
     el('authError').textContent = payload.msg;
   }
 };
+
+net.onTrade = (type, data) => {
+  if (type === 'incoming') {
+    incomingTrade = { fromId: data.fromId, fromName: data.fromName };
+    el('tradeIncomingName').textContent = data.fromName;
+    el('tradeIncoming').hidden = false;
+  } else if (type === 'start' || type === 'update') {
+    incomingTrade = null;
+    el('tradeIncoming').hidden = true;
+    activeTrade = {
+      otherId: data.otherId, otherName: data.otherName,
+      yourOffer: data.yourOffer, theirOffer: data.theirOffer,
+      youConfirmed: data.youConfirmed, theyConfirmed: data.theyConfirmed
+    };
+    drawTrade();
+  } else if (type === 'cancelled') {
+    activeTrade = null;
+    incomingTrade = null;
+    el('tradeIncoming').hidden = true;
+    el('tradeModal').hidden = true;
+    log(data.reason || 'Échange annulé.');
+  } else if (type === 'done') {
+    activeTrade = null;
+    el('tradeModal').hidden = true;
+    const gave = data.gave.map(i => `${i.qty} ${i.name}`).join(', ') || 'rien';
+    const got = data.received.map(i => `${i.qty} ${i.name}`).join(', ') || 'rien';
+    log(`Échange conclu avec ${data.withName} : donné ${gave} — reçu ${got}.`);
+  } else if (type === 'error') {
+    log(data.msg);
+  } else if (type === 'notice') {
+    log(data.msg);
+  }
+};
+
+/** Reconstruit la fenetre d'echange a partir de l'etat local (offre + sac courant). */
+function drawTrade() {
+  if (!activeTrade) return;
+  const t = activeTrade;
+  el('tradeModal').hidden = false;
+  el('tradeWithName').textContent = t.otherName;
+  el('tradeOtherName2').textContent = t.otherName;
+
+  const renderList = (target, items, opts) => {
+    target.innerHTML = '';
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'trade-empty';
+      empty.textContent = opts.emptyText;
+      target.appendChild(empty);
+      return;
+    }
+    for (const entry of items) {
+      const def = itemDef(entry.type);
+      const row = document.createElement('div');
+      row.className = 'trade-item' + (opts.onClick ? ' actionable' : '');
+      row.title = opts.onClick ? opts.title : '';
+
+      const gem = document.createElement('div');
+      gem.className = 'gem';
+      gem.style.background = def.color;
+
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = def.name;
+
+      const qty = document.createElement('span');
+      qty.className = 'qty';
+      qty.textContent = `×${entry.qty}`;
+
+      row.append(gem, name, qty);
+      if (opts.onClick) row.addEventListener('click', () => opts.onClick(entry));
+      target.appendChild(row);
+    }
+  };
+
+  // Ton offre : clic pour en retirer un exemplaire.
+  renderList(el('tradeYourOffer'), t.yourOffer, {
+    emptyText: 'Rien proposé pour l\u2019instant.',
+    title: 'Clic pour retirer 1',
+    onClick: (entry) => net.tradeOffer(entry.type, entry.qty - 1)
+  });
+
+  // Offre de l'autre joueur : lecture seule.
+  renderList(el('tradeTheirOffer'), t.theirOffer, {
+    emptyText: 'Rien proposé pour l\u2019instant.'
+  });
+
+  // Ton sac : uniquement les objets echangeables (les artefacts de classe ne le sont pas),
+  // avec la quantite deja mise dans l'offre soustraite de ce qui reste disponible.
+  const offered = new Map(t.yourOffer.map(e => [e.type, e.qty]));
+  const counts = new Map();
+  for (const slot of inventory) {
+    if (!slot) continue;
+    const def = itemDef(slot.type);
+    if (def.artifact) continue;
+    counts.set(slot.type, (counts.get(slot.type) || 0) + slot.qty);
+  }
+  const bag = [...counts.entries()]
+    .map(([type, total]) => ({ type, qty: total - (offered.get(type) || 0) }))
+    .filter(e => e.qty > 0);
+
+  renderList(el('tradeYourBag'), bag, {
+    emptyText: 'Sac vide (hors artefacts).',
+    title: 'Clic pour ajouter 1 à l\u2019offre',
+    onClick: (entry) => net.tradeOffer(entry.type, (offered.get(entry.type) || 0) + 1)
+  });
+
+  const btn = el('tradeConfirmBtn');
+  btn.textContent = t.youConfirmed ? 'Offre validée ✓' : 'Valider mon offre';
+  btn.classList.toggle('confirmed', t.youConfirmed);
+
+  el('tradeStatus').textContent = t.youConfirmed && t.theyConfirmed
+    ? 'Échange en cours…'
+    : t.youConfirmed
+      ? `En attente de ${t.otherName}…`
+      : t.theyConfirmed
+        ? `${t.otherName} a validé son offre.`
+        : 'Compose ton offre puis valide-la.';
+}
 
 function log(message) {
   const box = el('log');
@@ -393,7 +517,13 @@ function updateHud(players) {
     const label = document.createElement('span');
     const cls = catalog && catalog.classes[p.classId] ? catalog.classes[p.classId].name : '';
     label.textContent = p.id === net.id ? `${p.name} (toi) — ${cls}` : `${p.name} — ${cls}`;
-    if (p.id === net.id) label.className = 'me';
+    if (p.id === net.id) {
+      label.className = 'me';
+    } else {
+      li.className = 'tradable';
+      li.title = `Proposer un échange à ${p.name}`;
+      li.addEventListener('click', () => net.tradeRequest(p.id));
+    }
     li.append(dot, label);
     roster.appendChild(li);
   }
@@ -410,6 +540,25 @@ for (const id of ['username', 'password']) {
 }
 // Derniere sauvegarde avant fermeture de l'onglet.
 window.addEventListener('beforeunload', () => net.requestSave());
+
+// --- Echanges entre comptes ---
+el('tradeAcceptBtn').addEventListener('click', () => {
+  if (!incomingTrade) return;
+  net.tradeRespond(true);
+  el('tradeIncoming').hidden = true;
+});
+el('tradeDeclineBtn').addEventListener('click', () => {
+  if (!incomingTrade) return;
+  net.tradeRespond(false);
+  incomingTrade = null;
+  el('tradeIncoming').hidden = true;
+});
+el('tradeCloseBtn').addEventListener('click', () => {
+  net.tradeCancel();
+  activeTrade = null;
+  el('tradeModal').hidden = true;
+});
+el('tradeConfirmBtn').addEventListener('click', () => net.tradeConfirm());
 
 el('username').focus();
 boot();

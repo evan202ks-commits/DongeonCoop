@@ -52,6 +52,12 @@ function play(token, classId) {
       client.stats = d.stats;
     });
     socket.on('notice', (msg) => { client.notice = msg; });
+    socket.on('trade:incoming', (d) => { client.tradeIncoming = d; });
+    socket.on('trade:start', (d) => { client.trade = d; });
+    socket.on('trade:update', (d) => { client.trade = d; });
+    socket.on('trade:cancelled', (d) => { client.tradeCancelled = d; client.trade = null; });
+    socket.on('trade:done', (d) => { client.tradeDone = d; client.trade = null; });
+    socket.on('trade:error', (msg) => { client.tradeError = msg; });
     socket.on('connect', () => socket.emit('join', { token, classId }));
   });
 }
@@ -279,6 +285,65 @@ async function walkToLoot(client, wanted = 1, tries = 80) {
   const legitMax = d.attrs.speed * 1.5;
   check('triche sur dt bornee', cheat < legitMax, `${cheat.toFixed(0)}px (plafond ${legitMax}px)`);
   d.socket.close();
+  await wait(300);
+
+  // --- Echanges entre comptes -------------------------------------------
+  const buyer = await api('/api/register', { username: `Buyer${suffix}`, password: 'motdepasse' });
+  const seller = await api('/api/register', { username: `Seller${suffix}`, password: 'motdepasse' });
+  const p1 = await play(buyer.data.token, 'archer');
+  const p2 = await play(seller.data.token, 'barbare');
+  await wait(CONFIG.SPAWN.dropMs + 200);
+
+  /** Rapproche un joueur d'un point pour passer sous la portee de demande d'echange. */
+  async function walkTo(client, tx, ty, tries = 60) {
+    for (let i = 0; i < tries; i++) {
+      const dx = tx - client.last.x, dy = ty - client.last.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 40) break;
+      await push(client, dx / dist, dy / dist, 150);
+    }
+  }
+  await walkTo(p1, p2.last.x, p2.last.y);
+
+  await walkToLoot(p2, 1);
+  const lootType = (lootOnly(p2.inventory)[0] || {}).type;
+  check('le vendeur a du butin a offrir', !!lootType, JSON.stringify(p2.inventory));
+  const sellerBefore = p2.inventory.filter(s => s && s.type === lootType).reduce((n, s) => n + s.qty, 0);
+
+  p1.socket.emit('trade:request', p2.socket.id);
+  await wait(300);
+  check('demande d\'échange reçue par le vendeur',
+    !!p2.tradeIncoming && p2.tradeIncoming.fromName === buyer.data.profile.name, p2.tradeIncoming);
+
+  p2.socket.emit('trade:respond', true);
+  await wait(300);
+  check('échange démarré des deux côtés', !!p1.trade && !!p2.trade);
+
+  p2.socket.emit('trade:offer', { type: lootType, qty: 1 });
+  await wait(300);
+  check('offre du vendeur visible chez l\'acheteur',
+    p1.trade && p1.trade.theirOffer.some(o => o.type === lootType && o.qty === 1), JSON.stringify(p1 && p1.trade));
+
+  const artType = types(p1.inventory).find(isArtifact);
+  p1.socket.emit('trade:offer', { type: artType, qty: 1 });
+  await wait(300);
+  check('un artefact de classe refusé dans un échange', !!p1.tradeError, p1.tradeError);
+
+  p2.socket.emit('trade:confirm');
+  await wait(300);
+  check('confirmation du vendeur transmise à l\'acheteur', !!(p1.trade && p1.trade.theyConfirmed));
+
+  p1.socket.emit('trade:confirm');
+  await wait(400);
+  check('échange conclu des deux côtés', !!p1.tradeDone && !!p2.tradeDone);
+  check('l\'acheteur a bien reçu l\'objet', types(p1.inventory).includes(lootType), types(p1.inventory).join(', '));
+
+  const sellerAfter = p2.inventory.filter(s => s && s.type === lootType).reduce((n, s) => n + s.qty, 0);
+  check('le vendeur a bien perdu 1 exemplaire', sellerAfter === sellerBefore - 1, `${sellerBefore} -> ${sellerAfter}`);
+
+  p1.socket.close();
+  p2.socket.close();
+  await wait(300);
 
   console.log(failures ? `\n${failures} echec(s)` : '\nTout est vert.');
   setTimeout(() => process.exit(failures ? 1 : 0), 300);

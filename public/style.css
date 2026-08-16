@@ -38,6 +38,8 @@ html,body{
 .stat b{color:var(--text);font-weight:600;}
 #roster{list-style:none;margin:0;padding:0;max-height:38vh;overflow:auto;}
 #roster li{display:flex;align-items:center;gap:8px;padding:2px 0;}
+#roster li.tradable{cursor:pointer;border-radius:6px;}
+#roster li.tradable:hover{background:rgba(74,222,128,.12);}
 #roster .dot{width:9px;height:9px;border-radius:50%;flex:none;}
 #roster .me{color:var(--accent);font-weight:600;}
 #log{max-width:280px;color:var(--muted);font-size:.8rem;}
@@ -72,6 +74,66 @@ html,body{
 .slot.artifact{border-color:#7c6a3a;box-shadow:inset 0 0 8px rgba(250,204,21,.18);}
 .slot.artifact:hover{border-color:#facc15;}
 .attrs{margin-top:8px;font-size:.72rem;color:var(--muted);letter-spacing:.03em;}
+
+/* --- Echanges entre comptes --- */
+.trade-toast{
+  position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:25;
+  display:flex;align-items:center;gap:14px;
+  background:var(--panel);border:1px solid var(--accent-2);border-radius:12px;
+  padding:10px 16px;backdrop-filter:blur(6px);font-size:.85rem;pointer-events:auto;
+  box-shadow:0 10px 28px rgba(0,0,0,.45);
+}
+.trade-toast[hidden]{display:none;}
+.trade-toast-actions{display:flex;gap:6px;}
+button.mini{
+  padding:6px 12px;border-radius:8px;border:1px solid var(--line);cursor:pointer;
+  background:#0b1220;color:var(--text);font-size:.78rem;font-weight:600;
+}
+button.mini.accept{border-color:var(--accent);color:var(--accent);}
+button.mini.accept:hover{background:rgba(74,222,128,.14);}
+button.mini.decline{border-color:var(--danger);color:var(--danger);}
+button.mini.decline:hover{background:rgba(248,113,113,.14);}
+
+.trade-modal{
+  position:fixed;inset:0;z-index:24;display:flex;align-items:center;justify-content:center;
+  background:rgba(4,8,16,.55);padding:16px;pointer-events:auto;
+}
+.trade-modal[hidden]{display:none;}
+.trade-card{
+  width:100%;max-width:560px;max-height:86vh;overflow:auto;
+  background:linear-gradient(160deg,rgba(15,23,42,.97),rgba(8,13,24,.97));
+  border:1px solid var(--line);border-radius:16px;padding:18px 20px;
+  box-shadow:0 20px 50px rgba(0,0,0,.55);
+}
+.trade-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.trade-head h2{margin:0;font-size:1rem;letter-spacing:.02em;}
+.trade-head h2 span{color:var(--accent-2);}
+.trade-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.trade-col h3{margin:0 0 6px;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700;}
+.trade-col h3.mt{margin-top:12px;}
+.trade-list{display:flex;flex-direction:column;gap:5px;min-height:28px;}
+.trade-empty{color:var(--muted);font-size:.76rem;font-style:italic;}
+.trade-item{
+  display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;
+  background:rgba(15,23,42,.6);border:1px solid var(--line);font-size:.8rem;
+}
+.trade-item .gem{width:14px;height:14px;border-radius:3px;transform:rotate(45deg);flex:none;}
+.trade-item .name{flex:1;}
+.trade-item .qty{color:var(--muted);font-weight:700;}
+.trade-item.actionable{cursor:pointer;}
+.trade-item.actionable:hover{border-color:var(--accent-2);}
+.trade-footer{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-top:16px;padding-top:12px;border-top:1px solid var(--line);
+}
+.trade-status{font-size:.78rem;color:var(--muted);flex:1;}
+.trade-footer button.action{width:auto;padding:11px 20px;}
+.trade-footer button.action.confirmed{background:linear-gradient(135deg,#38bdf8,#0284c7);color:#03131f;}
+
+@media (max-width:640px){
+  .trade-cols{grid-template-columns:1fr;}
+  .trade-toast{left:8px;right:8px;transform:none;flex-wrap:wrap;}
+}
 
 /* --- Ecran de choix de classe --- */
 .gate-card.wide{max-width:960px;}

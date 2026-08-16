@@ -41,6 +41,12 @@ const CONFIG = {
 
   SAVE: {
     autosaveMs: 30000   // sauvegarde periodique des joueurs connectes
+  },
+
+  TRADE: {
+    requestRange: 160,      // distance max (px) pour proposer un echange a un autre joueur
+    requestTimeoutMs: 20000,// delai avant expiration d'une demande sans reponse
+    maxOfferTypes: 6        // nombre de types d'objets differents offrables a la fois
   }
 };
 

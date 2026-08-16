@@ -7,6 +7,7 @@ const CONFIG = require('./server/config');
 const RoomManager = require('./server/RoomManager');
 const Accounts = require('./server/accounts');
 const Classes = require('./server/classes');
+const TradeManager = require('./server/trade');
 const { ITEMS } = require('./server/items');
 
 const app = express();
@@ -16,6 +17,7 @@ const io = new Server(server, { cors: { origin: '*' } });
 const PORT = process.env.PORT || 3000;
 const rooms = new RoomManager();
 const accounts = new Accounts();
+const trades = new TradeManager(rooms);
 const online = new Map(); // accountId -> socket.id (un seul jeu par compte)
 
 app.use(express.json({ limit: '8kb' }));
@@ -63,6 +65,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 
 // --- Connexions temps reel ---------------------------------------------
 function saveAndDetach(socketId, room) {
+  trades.handleLeave(io, socketId);
   const player = room && room.remove(socketId);
   if (!player) return null;
   accounts.save(player.accountId, player.classId, room.saveSnapshot(player));
@@ -157,6 +160,29 @@ io.on('connection', (socket) => {
     if (!room) return;
     const player = room.players.get(socket.id);
     if (player) accounts.save(player.accountId, player.classId, room.saveSnapshot(player));
+  });
+
+  // --- Echanges entre comptes -------------------------------------------
+  socket.on('trade:request', (targetId) => {
+    if (room) trades.request(io, socket.id, String(targetId || ''));
+  });
+
+  socket.on('trade:respond', (accept) => {
+    if (room) trades.respond(io, socket.id, !!accept);
+  });
+
+  socket.on('trade:offer', (payload = {}) => {
+    if (room) trades.setOffer(io, socket.id, String(payload.type || ''), payload.qty);
+  });
+
+  socket.on('trade:confirm', () => {
+    if (room) trades.confirm(io, socket.id);
+  });
+
+  socket.on('trade:cancel', () => {
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    trades.cancel(io, socket.id, player ? `${player.name} a annulé l'échange.` : undefined);
   });
 
   socket.on('ping:check', (sentAt) => socket.emit('pong:check', sentAt));
