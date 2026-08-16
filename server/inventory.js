@@ -66,6 +66,22 @@ class Inventory {
     return type;
   }
 
+  /** Index de la premiere case contenant `type`, ou -1. */
+  indexOf(type) {
+    return this.slots.findIndex(s => s && s.type === type);
+  }
+
+  has(type) {
+    return this.indexOf(type) >= 0;
+  }
+
+  /** Retire un exemplaire de `type` ou qu'il soit. Renvoie true si retire. */
+  removeType(type) {
+    const index = this.indexOf(type);
+    if (index < 0) return false;
+    return this.removeOne(index) !== null;
+  }
+
   isFull() {
     return this.slots.every(Boolean);
   }

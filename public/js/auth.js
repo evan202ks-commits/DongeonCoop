@@ -50,6 +50,13 @@ export const Auth = {
     }
   },
 
+  /** Catalogue des classes et de leurs artefacts (ecran de choix de classe). */
+  async classes() {
+    const res = await fetch('/api/classes');
+    if (!res.ok) throw new Error('Catalogue des classes indisponible.');
+    return res.json();
+  },
+
   logout() {
     this.token = null;
   }

@@ -1,10 +1,11 @@
 // Rendu 2D vue de dessus : terrain plat, plots de depot, joueurs.
 export class Renderer {
-  constructor(canvas, config, items = {}) {
+  constructor(canvas, config, items = {}, classes = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.config = config;
     this.items = items;
+    this.classes = classes;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.camera = { x: 0, y: 0 };
     this.resize();
@@ -143,20 +144,39 @@ export class Renderer {
 
     const by = p.y - lift;
 
-    // Corps
-    ctx.fillStyle = p.color;
+    // Corps : teinte du compte a l'interieur, anneau a la couleur de la classe.
+    ctx.fillStyle = p.tint || p.color;
     ctx.beginPath();
     ctx.arc(p.x, by, r, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = isSelf ? '#f8fafc' : 'rgba(2,6,23,0.6)';
-    ctx.lineWidth = isSelf ? 3 : 2;
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = 4;
     ctx.stroke();
+
+    if (isSelf) {
+      ctx.strokeStyle = 'rgba(248,250,252,0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(p.x, by, r + 3.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Initiale de la classe (M / B / A / V) au centre du corps
+    const cls = this.classes[p.classId];
+    if (cls) {
+      ctx.font = '800 13px Segoe UI, Roboto, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(2,6,23,0.8)';
+      ctx.fillText(cls.name[0].toUpperCase(), p.x, by + 0.5);
+      ctx.textBaseline = 'alphabetic';
+    }
 
     // Repere de direction
     ctx.fillStyle = 'rgba(2,6,23,0.75)';
     ctx.beginPath();
-    ctx.arc(p.x + Math.cos(p.angle) * r * 0.55, by + Math.sin(p.angle) * r * 0.55, r * 0.28, 0, Math.PI * 2);
+    ctx.arc(p.x + Math.cos(p.angle) * r * 0.72, by + Math.sin(p.angle) * r * 0.72, r * 0.24, 0, Math.PI * 2);
     ctx.fill();
 
     // Onde d'impact a l'atterrissage
@@ -171,7 +191,13 @@ export class Renderer {
     // Nom
     ctx.font = '600 13px Segoe UI, Roboto, Arial, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = isSelf ? '#4ade80' : '#cbd5e1';
+    ctx.fillStyle = isSelf ? '#f8fafc' : '#cbd5e1';
     ctx.fillText(p.name, p.x, by - r - 9);
+
+    if (cls) {
+      ctx.font = '600 10px Segoe UI, Roboto, Arial, sans-serif';
+      ctx.fillStyle = p.color;
+      ctx.fillText(cls.name, p.x, by - r - 21);
+    }
   }
 }

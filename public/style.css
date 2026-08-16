@@ -56,13 +56,65 @@ html,body{
 .slot .gem{width:18px;height:18px;border-radius:4px;transform:rotate(45deg);}
 .slot .qty{position:absolute;right:3px;bottom:1px;font-size:.68rem;color:var(--text);font-weight:700;text-shadow:0 1px 2px #000;}
 
+/* --- Equipement --- */
+.panel h2.mt{margin-top:10px;}
+.equip{display:flex;gap:6px;}
+.eq{
+  width:74px;height:46px;border-radius:8px;
+  border:1px dashed var(--line);background:rgba(15,23,42,.45);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:.62rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;
+}
+.eq.filled{border-style:solid;border-color:#4c5b78;cursor:pointer;background:rgba(30,41,59,.7);}
+.eq.filled:hover{border-color:var(--accent-2);}
+.eq .gem{width:14px;height:14px;border-radius:3px;transform:rotate(45deg);}
+.eq-label{opacity:.8;}
+.slot.artifact{border-color:#7c6a3a;box-shadow:inset 0 0 8px rgba(250,204,21,.18);}
+.slot.artifact:hover{border-color:#facc15;}
+.attrs{margin-top:8px;font-size:.72rem;color:var(--muted);letter-spacing:.03em;}
+
+/* --- Ecran de choix de classe --- */
+.gate-card.wide{max-width:960px;}
+.class-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+  gap:12px;margin:18px 0 6px;text-align:left;
+}
+.class-card{
+  --cls:var(--accent);
+  position:relative;padding:14px;border-radius:14px;cursor:pointer;
+  background:linear-gradient(160deg,rgba(15,23,42,.95),rgba(8,13,24,.95));
+  border:1px solid var(--line);color:var(--text);font-family:inherit;
+  transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;
+}
+.class-card:hover{transform:translateY(-3px);border-color:var(--cls);box-shadow:0 10px 28px rgba(0,0,0,.45);}
+.class-card.last{border-color:var(--cls);box-shadow:0 0 0 1px var(--cls) inset;}
+.class-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.class-dot{width:12px;height:12px;border-radius:50%;background:var(--cls);box-shadow:0 0 10px var(--cls);flex:none;}
+.class-name{font-size:1.05rem;font-weight:700;letter-spacing:.04em;}
+.class-tag{
+  margin-left:auto;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--cls);border:1px solid var(--cls);border-radius:20px;padding:2px 7px;opacity:.85;
+}
+.class-tagline{margin:0 0 10px;font-size:.78rem;color:var(--muted);line-height:1.35;}
+.class-base{display:flex;flex-wrap:wrap;gap:8px;font-size:.7rem;color:var(--muted);margin-bottom:10px;}
+.class-base b{color:var(--text);}
+.class-arts{display:flex;flex-direction:column;gap:5px;}
+.class-art{display:flex;align-items:center;gap:7px;font-size:.73rem;}
+.class-art i{width:10px;height:10px;border-radius:2px;transform:rotate(45deg);flex:none;}
+.art-name{flex:1;}
+.art-slot{font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);}
+.class-progress{
+  margin-top:11px;padding-top:9px;border-top:1px solid var(--line);
+  font-size:.68rem;color:var(--muted);line-height:1.4;
+}
+
 /* --- Ecran de connexion --- */
 .gate{
   position:fixed;inset:0;z-index:20;
   display:flex;align-items:center;justify-content:center;padding:20px;
   background:radial-gradient(circle at 50% 30%, var(--bg-2), var(--bg-1) 70%);
 }
-.gate.hidden{display:none;}
+.gate.hidden,.gate[hidden]{display:none;}
 .gate-card{width:100%;max-width:380px;text-align:center;}
 .gate h1{
   margin:0 0 6px;font-size:1.9rem;letter-spacing:2px;
@@ -110,6 +162,10 @@ button.link{
   #log{max-width:150px;}
   .slots{grid-template-columns:repeat(4,36px);}
   .slot{width:36px;height:36px;}
+  .eq{width:56px;height:40px;font-size:.55rem;}
+  .class-grid{grid-template-columns:1fr;max-height:58vh;overflow:auto;}
+  .class-card{padding:11px;}
+  .attrs{font-size:.66rem;}
 }
 @media (prefers-reduced-motion:reduce){
   button.action{transition:none;}

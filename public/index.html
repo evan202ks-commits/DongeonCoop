@@ -40,9 +40,21 @@
   <div class="hud-row bottom">
     <div class="panel" id="log"></div>
     <div class="panel inventory">
-      <h2>Inventaire <span class="hint-inline">clic = jeter 1</span></h2>
+      <h2>Équipement <span class="hint-inline" id="classLabel">—</span></h2>
+      <div id="equip" class="equip"></div>
+      <h2 class="mt">Inventaire <span class="hint-inline">clic = équiper / jeter 1</span></h2>
       <div id="slots" class="slots"></div>
+      <div class="attrs" id="attrs"></div>
     </div>
+  </div>
+</div>
+
+<div class="gate" id="classGate" hidden>
+  <div class="gate-card wide">
+    <h1>CHOISIS TA CLASSE</h1>
+    <p id="classIntro">Chaque classe garde son propre inventaire, ses artefacts et sa progression.</p>
+    <div class="class-grid" id="classGrid"></div>
+    <button class="link" id="switchAccountBtn" type="button">Changer de compte</button>
   </div>
 </div>
 

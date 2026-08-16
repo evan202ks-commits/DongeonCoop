@@ -1,7 +1,8 @@
 const crypto = require('crypto');
 const CONFIG = require('./config');
 const Inventory = require('./inventory');
-const { ITEMS, randomType, isValidType } = require('./items');
+const Classes = require('./classes');
+const { ITEMS, randomType, isValidType, isDroppable } = require('./items');
 
 /**
  * Une salle = un terrain plat partage + les joueurs et le butin dessus.
@@ -49,11 +50,17 @@ class Room {
       ? { x: saved.x, y: saved.y, angle: saved.angle || 0 }
       : this.nextSpawn();
 
+    const classId = Classes.isValidClass(profile.classId) ? profile.classId : Classes.CLASS_IDS[0];
+    const equipment = Classes.sanitizeEquipment(classId, profile.equipment);
+
     const player = {
       id: socketId,
       accountId: profile.accountId,
       name: profile.name,
-      color: profile.color,
+      classId,
+      color: Classes.CLASSES[classId].color,   // couleur de la classe
+      tint: profile.color,                      // couleur du compte : distingue deux joueurs de la meme classe
+      equipment,
       x: spawn.x,
       y: spawn.y,
       dx: 0,
@@ -62,6 +69,7 @@ class Room {
       restored: !!saved,               // reprise de partie ou premier depot
       inventory: new Inventory(profile.inventory),
       stats: { ...profile.stats },
+      attrs: Classes.resolveStats(classId, equipment),
       state: 'dropping',
       dropUntil: Date.now() + CONFIG.SPAWN.dropMs,
       joinedAt: Date.now(),
@@ -95,6 +103,7 @@ class Room {
     return {
       position: { x: player.x, y: player.y, angle: player.angle },
       inventory: player.inventory.toJSON(),
+      equipment: player.equipment,
       stats
     };
   }
@@ -120,8 +129,9 @@ class Room {
     const len = Math.hypot(ax, ay);
     if (len > 1) { ax /= len; ay /= len; }
 
-    player.x += ax * CONFIG.PLAYER.speed * cmd.dt;
-    player.y += ay * CONFIG.PLAYER.speed * cmd.dt;
+    const speed = (player.attrs && player.attrs.speed) || CONFIG.PLAYER.speed;
+    player.x += ax * speed * cmd.dt;
+    player.y += ay * speed * cmd.dt;
     player.dx = ax;
     player.dy = ay;
     if (len > 0.01) player.angle = Math.atan2(ay, ax);
@@ -160,6 +170,12 @@ class Room {
     const index = Math.floor(Number(slotIndex));
     if (!(index >= 0 && index < CONFIG.INVENTORY.slots)) return null;
 
+    const peek = player.inventory.slots[index];
+    if (!peek || !isDroppable(peek.type)) {
+      if (peek) this.events.push({ type: 'notice', playerId: socketId, msg: 'Un artefact de classe ne se jette pas.' });
+      return null;
+    }
+
     const type = player.inventory.removeOne(index);
     if (!type) return null;
 
@@ -178,16 +194,72 @@ class Room {
     return item;
   }
 
+  // --- Artefacts / equipement -------------------------------------------
+  /** Recalcule vitesse, portee et chance apres un changement d'equipement. */
+  refreshAttrs(player) {
+    player.attrs = Classes.resolveStats(player.classId, player.equipment);
+    return player.attrs;
+  }
+
+  /**
+   * Equipe un artefact pris dans l'inventaire. L'artefact deja porte dans le
+   * meme emplacement retourne dans l'inventaire : rien ne se perd.
+   */
+  equip(socketId, type) {
+    const player = this.players.get(socketId);
+    if (!player) return false;
+
+    const art = Classes.ARTIFACTS[type];
+    if (!art || art.classId !== player.classId) {
+      this.events.push({ type: 'notice', playerId: socketId, msg: 'Cet artefact appartient à une autre classe.' });
+      return false;
+    }
+    if (!player.inventory.has(type)) return false;
+
+    const previous = player.equipment[art.slot];
+    if (previous === type) return false;
+
+    player.inventory.removeType(type);
+    player.equipment[art.slot] = type;
+    if (previous) player.inventory.add(previous, 1);
+
+    this.refreshAttrs(player);
+    this.events.push({ type: 'equip', playerId: socketId, item: art.name });
+    return true;
+  }
+
+  /** Retire l'artefact d'un emplacement et le remet dans l'inventaire. */
+  unequip(socketId, slot) {
+    const player = this.players.get(socketId);
+    if (!player || !Classes.EQUIP_SLOTS.includes(slot)) return false;
+
+    const type = player.equipment[slot];
+    if (!type) return false;
+    if (player.inventory.isFull()) {
+      this.events.push({ type: 'notice', playerId: socketId, msg: 'Inventaire plein : impossible de déséquiper.' });
+      return false;
+    }
+
+    player.equipment[slot] = null;
+    player.inventory.add(type, 1);
+    this.refreshAttrs(player);
+    this.events.push({ type: 'equip', playerId: socketId, item: null });
+    return true;
+  }
+
   collectLoot(player) {
     if (player.state !== 'active') return;
     const now = Date.now();
-    const reach = CONFIG.INVENTORY.pickupRadius;
+    const reach = (player.attrs && player.attrs.pickup) || CONFIG.INVENTORY.pickupRadius;
+    const luck = (player.attrs && player.attrs.luck) || 0;
 
     for (const item of this.ground.values()) {
       if (now < item.pickupAfter) continue;
       if (Math.hypot(item.x - player.x, item.y - player.y) > reach) continue;
 
-      const added = player.inventory.add(item.type, item.qty);
+      // Chance de la classe/des artefacts : un exemplaire de plus sur le meme ramassage.
+      const qty = item.qty + (Math.random() < luck ? 1 : 0);
+      const added = player.inventory.add(item.type, qty);
       if (added <= 0) {
         this.events.push({ type: 'full', playerId: player.id });
         continue;
@@ -282,6 +354,8 @@ class Room {
         id: p.id,
         n: p.name,
         c: p.color,
+        c2: p.tint,
+        k: p.classId,
         x: Math.round(p.x * 100) / 100,
         y: Math.round(p.y * 100) / 100,
         a: Math.round(p.angle * 100) / 100,

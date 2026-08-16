@@ -1,7 +1,7 @@
 {
   "name": "dongeon-coop",
-  "version": "1.2.0",
-  "description": "Jeu coop en ligne : terrain plat partage en multijoueur temps reel, avec comptes et sauvegarde de la progression (Express + Socket.IO)",
+  "version": "1.3.0",
+  "description": "Jeu coop en ligne : terrain plat partage en multijoueur temps reel, avec comptes, choix de classe a chaque connexion (Mage/Barbare/Archer/Voleur), artefacts equipables et inventaire par classe (Express + Socket.IO)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

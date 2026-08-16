@@ -14,11 +14,13 @@ export class Net {
     this.onEvent = () => {};
   }
 
-  connect(token) {
+  connect(token, classId) {
     this.socket = io();
+    this.classId = classId;
     const s = this.socket;
 
-    s.on('connect', () => s.emit('join', { token }));
+    // La classe part a chaque (re)connexion : le serveur refuse une entree sans elle.
+    s.on('connect', () => s.emit('join', { token, classId }));
 
     s.on('welcome', (data) => {
       this.id = data.id;
@@ -54,6 +56,14 @@ export class Net {
 
   dropSlot(index) {
     if (this.socket && this.socket.connected) this.socket.emit('inventory:drop', index);
+  }
+
+  equip(type) {
+    if (this.socket && this.socket.connected) this.socket.emit('equip', type);
+  }
+
+  unequip(slot) {
+    if (this.socket && this.socket.connected) this.socket.emit('unequip', slot);
   }
 
   requestSave() {

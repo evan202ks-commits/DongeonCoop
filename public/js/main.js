@@ -12,9 +12,12 @@ let inputAcc = 0;
 let seq = 0;
 let pending = [];               // commandes non encore confirmees par le serveur
 
-const self = { x: 0, y: 0, angle: 0, name: '', color: '#4ade80' };
+const self = { x: 0, y: 0, angle: 0, name: '', color: '#4ade80', speed: 260 };
 const dropStarts = new Map();   // id -> debut de chute (pour l'animation)
 let inventory = [];
+let equipment = {};
+let catalog = null;             // { classes, slots, labels }
+let account = null;             // profil compte : progression de chaque classe
 let joined = false;
 let mode = 'login';
 let lastFrame = performance.now();
@@ -27,8 +30,10 @@ function applyInput(entity, cmd, config) {
   const len = Math.hypot(ax, ay);
   if (len > 1) { ax /= len; ay /= len; }
 
-  entity.x += ax * config.PLAYER.speed * cmd.dt;
-  entity.y += ay * config.PLAYER.speed * cmd.dt;
+  // La vitesse depend de la classe et des artefacts equipes, pas de CONFIG.
+  const speed = entity.speed || config.PLAYER.speed;
+  entity.x += ax * speed * cmd.dt;
+  entity.y += ay * speed * cmd.dt;
   if (len > 0.01) entity.angle = Math.atan2(ay, ax);
 
   const r = config.PLAYER.radius;
@@ -54,28 +59,89 @@ async function submit() {
   btn.disabled = true;
   el('authError').textContent = '';
   try {
-    if (mode === 'login') await Auth.login(username, password);
-    else await Auth.register(username, password);
-    enterGame();
+    const profile = mode === 'login'
+      ? await Auth.login(username, password)
+      : await Auth.register(username, password);
+    btn.disabled = false;
+    btn.textContent = mode === 'login' ? 'Se connecter' : 'Créer le compte';
+    // Creation de compte comme simple connexion : on passe par le choix de classe.
+    await showClassGate(profile);
   } catch (err) {
     el('authError').textContent = err.message;
     btn.disabled = false;
   }
 }
 
-function enterGame() {
-  el('submitBtn').disabled = true;
-  el('submitBtn').textContent = 'Connexion…';
-  net.connect(Auth.token);
+// --- Choix de la classe (a chaque connexion) ---------------------------
+const fmtTime = (ms) => {
+  const min = Math.round((ms || 0) / 60000);
+  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
+};
+
+async function showClassGate(profile) {
+  account = profile;
+  if (!catalog) catalog = await Auth.classes();
+
+  el('gate').classList.add('hidden');
+  el('classGate').hidden = false;
+  el('classIntro').textContent = profile.lastClass
+    ? `Content de te revoir, ${profile.name}. Reprends un personnage ou lances-en un autre.`
+    : `Bienvenue ${profile.name}. Chaque classe garde son propre inventaire, ses artefacts et sa progression.`;
+
+  const grid = el('classGrid');
+  grid.innerHTML = '';
+
+  for (const cls of Object.values(catalog.classes)) {
+    const state = (profile.classes && profile.classes[cls.id]) || { played: false, stats: {}, equipment: {}, filled: 0 };
+
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'class-card';
+    card.style.setProperty('--cls', cls.color);
+    if (profile.lastClass === cls.id) card.classList.add('last');
+
+    const equippedCount = catalog.slots.filter(s => state.equipment && state.equipment[s]).length;
+
+    card.innerHTML = `
+      <div class="class-head">
+        <span class="class-dot"></span>
+        <span class="class-name">${cls.name}</span>
+        ${profile.lastClass === cls.id ? '<span class="class-tag">dernier joué</span>' : ''}
+      </div>
+      <p class="class-tagline">${cls.tagline}</p>
+      <div class="class-base">
+        <span>Vitesse <b>${cls.base.speed}</b></span>
+        <span>Portée <b>${cls.base.pickup}</b></span>
+        <span>Chance <b>${Math.round(cls.base.luck * 100)}%</b></span>
+      </div>
+      <div class="class-arts">
+        ${cls.artifacts.map(a => `
+          <div class="class-art" title="${a.desc}">
+            <i style="background:${a.color}"></i>
+            <span class="art-name">${a.name}</span>
+            <span class="art-slot">${catalog.labels[a.slot]}</span>
+          </div>`).join('')}
+      </div>
+      <div class="class-progress">${state.played
+        ? `${state.stats.sessions || 0} session(s) · ${state.stats.pickups || 0} ramassés · ${fmtTime(state.stats.playtimeMs)} · ${equippedCount}/${catalog.slots.length} équipé(s)`
+        : 'Nouveau personnage — ses 3 artefacts t\u2019attendent dans son sac.'}</div>
+    `;
+    card.addEventListener('click', () => enterGame(cls.id));
+    grid.appendChild(card);
+  }
 }
 
-/** Session encore valide : on saute l'ecran de connexion. */
+function enterGame(classId) {
+  el('classGate').hidden = true;
+  net.connect(Auth.token, classId);
+}
+
+/** Session encore valide : on saute la saisie du mot de passe, pas le choix de classe. */
 async function boot() {
   const profile = await Auth.resume();
   if (profile) {
-    el('gateIntro').textContent = `Content de te revoir, ${profile.name}.`;
     el('logoutBtn').hidden = false;
-    enterGame();
+    await showClassGate(profile);
   }
 }
 
@@ -86,28 +152,39 @@ net.onWelcome = (data) => {
   self.angle = data.you.angle;
   self.name = data.you.name;
   self.color = data.you.color;
+  self.speed = data.you.attrs.speed;
   inventory = data.inventory || [];
+  equipment = data.equipment || {};
+  catalog = catalog || { classes: data.classes, slots: data.equipSlots, labels: data.slotLabels };
   dropStarts.set(data.id, performance.now());
 
-  renderer = new Renderer(el('stage'), data.config, data.items);
+  renderer = new Renderer(el('stage'), data.config, data.items, data.classes);
   renderer.centerOn(self.x, self.y);
 
   el('roomId').textContent = data.roomId;
   el('pickups').textContent = data.you.stats?.pickups || 0;
+  el('classLabel').textContent = catalog.classes[data.you.classId].name;
   el('gate').classList.add('hidden');
+  el('classGate').hidden = true;
   drawInventory();
+  drawEquipment();
+  drawAttrs(data.you.attrs);
 
   joined = true;
   log(data.you.restored
-    ? `Partie reprise là où tu t'étais arrêté, ${self.name}.`
-    : `Bienvenue ${self.name}, tu es déposé sur le terrain.`);
+    ? `${catalog.classes[data.you.classId].name} repris là où tu t'étais arrêté.`
+    : `${self.name} entre sur le terrain en ${catalog.classes[data.you.classId].name}.`);
   requestAnimationFrame(loop);
 };
 
 net.onInventory = (data) => {
   inventory = data.slots;
+  if (data.equipment) equipment = data.equipment;
+  if (data.attrs) { self.speed = data.attrs.speed; drawAttrs(data.attrs); }
   drawInventory();
+  drawEquipment();
   if (data.picked) log(`+${data.picked.qty} ${data.picked.name}`);
+  if (data.equipped) log(`${data.equipped} équipé.`);
   if (data.stats) el('pickups').textContent = data.stats.pickups || 0;
 };
 
@@ -117,8 +194,8 @@ net.onEvent = (type, payload) => {
   if (type === 'notice') log(payload.msg);
   if (type === 'disconnect') log('Connexion perdue — reconnexion…');
   if (type === 'auth-error') {
-    Auth.logout();
     joined = false;
+    el('classGate').hidden = true;
     el('gate').classList.remove('hidden');
     el('submitBtn').disabled = false;
     el('submitBtn').textContent = mode === 'login' ? 'Se connecter' : 'Créer le compte';
@@ -134,7 +211,9 @@ function log(message) {
   while (box.children.length > 4) box.removeChild(box.firstChild);
 }
 
-// --- Inventaire --------------------------------------------------------
+// --- Inventaire et equipement ------------------------------------------
+const itemDef = (type) => net.items[type] || { color: '#94a3b8', name: type };
+
 function drawInventory() {
   const grid = el('slots');
   const size = net.config ? net.config.INVENTORY.slots : inventory.length;
@@ -146,22 +225,63 @@ function drawInventory() {
     cell.className = slot ? 'slot filled' : 'slot';
 
     if (slot) {
-      const def = net.items[slot.type] || { color: '#94a3b8', name: slot.type };
-      cell.title = `${def.name} ×${slot.qty} — clic pour en jeter un`;
+      const def = itemDef(slot.type);
+      const isArtifact = !!def.artifact;
+      if (isArtifact) cell.classList.add('artifact');
+      cell.title = isArtifact
+        ? `${def.name} — ${def.desc} — clic pour équiper`
+        : `${def.name} ×${slot.qty} — clic pour en jeter un`;
+
       const gem = document.createElement('div');
       gem.className = 'gem';
       gem.style.background = def.color;
       cell.appendChild(gem);
+
       if (slot.qty > 1) {
         const qty = document.createElement('span');
         qty.className = 'qty';
         qty.textContent = slot.qty;
         cell.appendChild(qty);
       }
-      cell.addEventListener('click', () => net.dropSlot(i));
+      // Un artefact s'equipe, tout le reste se jette : un seul clic pour les deux.
+      cell.addEventListener('click', () => isArtifact ? net.equip(slot.type) : net.dropSlot(i));
     }
     grid.appendChild(cell);
   }
+}
+
+function drawEquipment() {
+  const wrap = el('equip');
+  if (!catalog) return;
+  wrap.innerHTML = '';
+
+  for (const slotName of catalog.slots) {
+    const type = equipment[slotName];
+    const cell = document.createElement('div');
+    cell.className = type ? 'eq filled' : 'eq';
+
+    const label = document.createElement('span');
+    label.className = 'eq-label';
+    label.textContent = catalog.labels[slotName];
+    cell.appendChild(label);
+
+    if (type) {
+      const def = itemDef(type);
+      const gem = document.createElement('div');
+      gem.className = 'gem';
+      gem.style.background = def.color;
+      cell.appendChild(gem);
+      cell.title = `${def.name} — ${def.desc} — clic pour déséquiper`;
+      cell.addEventListener('click', () => net.unequip(slotName));
+    } else {
+      cell.title = `${catalog.labels[slotName]} — aucun artefact équipé`;
+    }
+    wrap.appendChild(cell);
+  }
+}
+
+function drawAttrs(attrs) {
+  el('attrs').textContent = `Vitesse ${attrs.speed} · Portée ${attrs.pickup} · Chance ${Math.round(attrs.luck * 100)}%`;
 }
 
 // --- Boucle de rendu ---------------------------------------------------
@@ -205,7 +325,7 @@ function reconcile() {
 
   pending = pending.filter(cmd => cmd.seq > mine.seq);
 
-  const replayed = { x: mine.x, y: mine.y, angle: mine.a };
+  const replayed = { x: mine.x, y: mine.y, angle: mine.a, speed: self.speed };
   for (const cmd of pending) applyInput(replayed, cmd, net.config);
 
   const gap = Math.hypot(replayed.x - self.x, replayed.y - self.y);
@@ -233,6 +353,8 @@ function buildPlayerList(now) {
       id: b.id,
       name: b.n,
       color: b.c,
+      tint: b.c2 || b.c,
+      classId: b.k,
       x: isSelf ? self.x : a.x + (b.x - a.x) * frames.t,
       y: isSelf ? self.y : a.y + (b.y - a.y) * frames.t,
       angle: isSelf ? self.angle : b.a,
@@ -269,7 +391,8 @@ function updateHud(players) {
     dot.className = 'dot';
     dot.style.background = p.color;
     const label = document.createElement('span');
-    label.textContent = p.id === net.id ? `${p.name} (toi)` : p.name;
+    const cls = catalog && catalog.classes[p.classId] ? catalog.classes[p.classId].name : '';
+    label.textContent = p.id === net.id ? `${p.name} (toi) — ${cls}` : `${p.name} — ${cls}`;
     if (p.id === net.id) label.className = 'me';
     li.append(dot, label);
     roster.appendChild(li);
@@ -281,6 +404,7 @@ el('tabLogin').addEventListener('click', () => setMode('login'));
 el('tabRegister').addEventListener('click', () => setMode('register'));
 el('submitBtn').addEventListener('click', submit);
 el('logoutBtn').addEventListener('click', () => { Auth.logout(); location.reload(); });
+el('switchAccountBtn').addEventListener('click', () => { Auth.logout(); location.reload(); });
 for (const id of ['username', 'password']) {
   el(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 }

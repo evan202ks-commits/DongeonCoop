@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const CONFIG = require('./server/config');
 const RoomManager = require('./server/RoomManager');
 const Accounts = require('./server/accounts');
+const Classes = require('./server/classes');
 const { ITEMS } = require('./server/items');
 
 const app = express();
@@ -43,6 +44,11 @@ app.get('/api/me', (req, res) => {
   res.json({ profile: accounts.profile(user) });
 });
 
+/** Catalogue des classes et de leurs artefacts : sert l'ecran de choix de classe. */
+app.get('/api/classes', (req, res) => {
+  res.json({ classes: Classes.publicCatalog(), slots: Classes.EQUIP_SLOTS, labels: Classes.SLOT_LABELS });
+});
+
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
 app.get('/stats', (req, res) => {
@@ -59,7 +65,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 function saveAndDetach(socketId, room) {
   const player = room && room.remove(socketId);
   if (!player) return null;
-  accounts.save(player.accountId, room.saveSnapshot(player));
+  accounts.save(player.accountId, player.classId, room.saveSnapshot(player));
   accounts.flush();
   online.delete(player.accountId);
   return player;
@@ -74,6 +80,12 @@ io.on('connection', (socket) => {
 
     const user = accounts.verifyToken(payload.token);
     if (!user) return socket.emit('auth:error', 'Session invalide, reconnecte-toi.');
+
+    // La classe est choisie a chaque connexion : sans classe valide, pas d'entree en jeu.
+    const classId = payload.classId;
+    if (!Classes.isValidClass(classId)) {
+      return socket.emit('auth:error', 'Choisis une classe avant d\'entrer sur le terrain.');
+    }
 
     // Un compte ne peut pas etre en jeu deux fois : l'ancienne session est ejectee.
     const previous = online.get(user.id);
@@ -93,9 +105,9 @@ io.on('connection', (socket) => {
     room = rooms.findAvailable();
     accountId = user.id;
     online.set(user.id, socket.id);
-    accounts.markSession(user.id);
+    accounts.markSession(user.id, classId);
 
-    const profile = accounts.profile(user);
+    const profile = accounts.gameProfile(user, classId);
     const player = room.add(socket.id, profile);
     socket.join(room.id);
 
@@ -104,17 +116,23 @@ io.on('connection', (socket) => {
       roomId: room.id,
       config: CONFIG,
       items: ITEMS,
+      classes: Classes.publicCatalog(),
+      equipSlots: Classes.EQUIP_SLOTS,
+      slotLabels: Classes.SLOT_LABELS,
       you: {
         x: player.x, y: player.y, angle: player.angle,
         color: player.color, name: player.name,
+        classId: player.classId, attrs: player.attrs,
         restored: player.restored, stats: player.stats
       },
       inventory: player.inventory.toJSON(),
+      equipment: player.equipment,
       snapshot: room.snapshot()
     });
 
     socket.to(room.id).emit('player:join', {
-      id: player.id, name: player.name, color: player.color, restored: player.restored
+      id: player.id, name: player.name, color: player.color,
+      classId: player.classId, restored: player.restored
     });
   });
 
@@ -126,11 +144,19 @@ io.on('connection', (socket) => {
     if (room) room.dropItem(socket.id, slot);
   });
 
+  socket.on('equip', (type) => {
+    if (room) room.equip(socket.id, String(type || ''));
+  });
+
+  socket.on('unequip', (slot) => {
+    if (room) room.unequip(socket.id, String(slot || ''));
+  });
+
   /** Sauvegarde manuelle demandee par le client (fermeture d'onglet, bouton). */
   socket.on('save', () => {
     if (!room) return;
     const player = room.players.get(socket.id);
-    if (player) accounts.save(player.accountId, room.saveSnapshot(player));
+    if (player) accounts.save(player.accountId, player.classId, room.saveSnapshot(player));
   });
 
   socket.on('ping:check', (sentAt) => socket.emit('pong:check', sentAt));
@@ -160,14 +186,19 @@ setInterval(() => {
     for (const event of room.drainEvents()) {
       const player = room.players.get(event.playerId);
       if (!player) continue;
-      if (event.type === 'pickup' || event.type === 'inventory') {
+      if (event.type === 'pickup' || event.type === 'inventory' || event.type === 'equip') {
         io.to(event.playerId).emit('inventory', {
           slots: player.inventory.toJSON(),
-          picked: event.item || null,
+          equipment: player.equipment,
+          attrs: player.attrs,
+          picked: event.item && event.type === 'pickup' ? event.item : null,
+          equipped: event.type === 'equip' ? event.item : undefined,
           stats: player.stats
         });
       } else if (event.type === 'full') {
         io.to(event.playerId).emit('notice', 'Inventaire plein.');
+      } else if (event.type === 'notice') {
+        io.to(event.playerId).emit('notice', event.msg);
       }
     }
   }
@@ -183,7 +214,7 @@ setInterval(() => {
 setInterval(() => {
   for (const room of rooms.all) {
     for (const player of room.players.values()) {
-      accounts.save(player.accountId, room.saveSnapshot(player));
+      accounts.save(player.accountId, player.classId, room.saveSnapshot(player));
     }
   }
   accounts.flush();

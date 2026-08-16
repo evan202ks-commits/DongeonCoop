@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const CONFIG = require('./config');
 const Store = require('./store');
 const Inventory = require('./inventory');
+const Classes = require('./classes');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const SESSION_DAYS = 30;
@@ -16,9 +17,14 @@ const COLORS = [
 
 const USERNAME_RE = /^[\p{L}\p{N}_-]{3,14}$/u;
 
+const emptyStats = () => ({ playtimeMs: 0, pickups: 0, sessions: 0, distance: 0 });
+
 /**
- * Comptes joueurs : identifiants, mots de passe haches, et surtout l'etat
- * persistant (position, inventaire, statistiques) recharge a chaque connexion.
+ * Comptes joueurs : identifiants, mots de passe haches, et l'etat persistant.
+ *
+ * L'etat de jeu n'est PAS stocke sur le compte mais sur chaque classe du compte :
+ * un joueur choisit sa classe a chaque connexion et retrouve la position,
+ * l'inventaire, l'equipement et les statistiques propres a cette classe.
  */
 class Accounts {
   constructor() {
@@ -33,10 +39,32 @@ class Accounts {
       this.store.flush();
     }
     this.secret = process.env.SESSION_SECRET || this.store.data.secret;
+
+    for (const user of Object.values(this.users)) Accounts.migrate(user);
+    this.store.touch();
+    this.store.flush();
   }
 
   get users() {
     return this.store.data.users;
+  }
+
+  /** Comptes d'avant les classes : l'ancien etat unique devient un heritage a reprendre. */
+  static migrate(user) {
+    if (!user.classes) user.classes = {};
+    if (user.lastClass === undefined) user.lastClass = null;
+
+    const hasLegacyRoot = 'position' in user || 'inventory' in user;
+    if (hasLegacyRoot && !user.legacy) {
+      user.legacy = {
+        position: user.position || null,
+        inventory: Array.isArray(user.inventory) ? user.inventory : null,
+        stats: user.stats || null
+      };
+    }
+    delete user.position;
+    delete user.inventory;
+    delete user.stats;
   }
 
   findByUsername(username) {
@@ -64,9 +92,8 @@ class Accounts {
       color: COLORS[Object.keys(this.users).length % COLORS.length],
       createdAt: Date.now(),
       lastSeen: Date.now(),
-      position: null,                       // null = depot sur l'anneau de spawn
-      inventory: new Array(CONFIG.INVENTORY.slots).fill(null),
-      stats: { playtimeMs: 0, pickups: 0, sessions: 0, distance: 0 }
+      lastClass: null,      // aucune classe jouee : l'ecran de choix part vierge
+      classes: {}           // rempli a la premiere partie de chaque classe
     };
 
     this.users[id] = user;
@@ -82,6 +109,7 @@ class Accounts {
     const ok = await bcrypt.compare(String(password || ''), user.passHash);
     if (!ok) return { error: 'Pseudo ou mot de passe incorrect.' };
 
+    Accounts.migrate(user);
     return { user, token: this.issueToken(user) };
   }
 
@@ -109,42 +137,137 @@ class Accounts {
     return this.users[id] || null;
   }
 
-  /** Etat charge a la connexion : position, inventaire, stats. */
+  // --- Etat par classe ----------------------------------------------------
+  /**
+   * Cree la fiche de classe a la premiere partie : ses artefacts lui sont
+   * attribues d'office dans son inventaire, prets a etre equipes.
+   * Si le compte vient d'avant les classes, son ancien etat est repris ici.
+   */
+  ensureClass(user, classId) {
+    if (!user.classes) user.classes = {};
+    if (user.classes[classId]) {
+      Accounts.repairClass(classId, user.classes[classId]);
+      return user.classes[classId];
+    }
+
+    const state = {
+      position: null,                    // null = depot sur l'anneau de spawn
+      inventory: new Array(CONFIG.INVENTORY.slots).fill(null),
+      equipment: Classes.emptyEquipment(),
+      stats: emptyStats(),
+      createdAt: Date.now()
+    };
+
+    // Heritage : le premier personnage cree recupere l'etat d'avant les classes.
+    if (user.legacy) {
+      if (user.legacy.position) state.position = user.legacy.position;
+      if (Array.isArray(user.legacy.inventory)) state.inventory = user.legacy.inventory;
+      if (user.legacy.stats) state.stats = { ...state.stats, ...user.legacy.stats };
+      delete user.legacy;
+    }
+
+    Accounts.repairClass(classId, state);
+    user.classes[classId] = state;
+    this.store.touch();
+    return state;
+  }
+
+  /**
+   * Remet en ordre une fiche de classe : inventaire et equipement nettoyes,
+   * et surtout tout artefact de la classe absent des deux est redonne
+   * (garantit qu'un personnage possede toujours ses artefacts).
+   */
+  static repairClass(classId, state) {
+    state.equipment = Classes.sanitizeEquipment(classId, state.equipment);
+    const inv = new Inventory(state.inventory);
+
+    for (const art of Classes.artifactsOf(classId)) {
+      const equipped = state.equipment[art.slot] === art.id;
+      if (equipped || inv.has(art.id)) continue;
+      if (inv.add(art.id, 1) === 0) state.equipment[art.slot] = art.id; // inventaire plein : on l'equipe
+    }
+
+    // Artefacts d'une autre classe glisses dans l'inventaire : ecartes.
+    const slots = inv.toJSON();
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      if (s && Classes.isArtifact(s.type) && Classes.ARTIFACTS[s.type].classId !== classId) slots[i] = null;
+    }
+
+    state.inventory = slots;
+    if (!state.stats) state.stats = emptyStats();
+    return state;
+  }
+
+  // --- Profils ------------------------------------------------------------
+  /** Vue compte : sert a l'ecran de choix de classe (progression de chaque personnage). */
   profile(user) {
+    const classes = {};
+    for (const id of Classes.CLASS_IDS) {
+      const state = user.classes && user.classes[id];
+      classes[id] = state
+        ? {
+            played: true,
+            stats: state.stats || emptyStats(),
+            equipment: Classes.sanitizeEquipment(id, state.equipment),
+            filled: Inventory.sanitize(state.inventory).filter(Boolean).length
+          }
+        : { played: false, stats: emptyStats(), equipment: Classes.emptyEquipment(), filled: 0 };
+    }
+
     return {
       accountId: user.id,
       name: user.username,
       color: user.color,
-      position: user.position,
-      inventory: Inventory.sanitize(user.inventory),
-      stats: user.stats || { playtimeMs: 0, pickups: 0, sessions: 0, distance: 0 }
+      lastClass: user.lastClass || null,
+      createdAt: user.createdAt,
+      classes
     };
   }
 
-  /** Sauvegarde de l'etat de jeu d'un joueur (appelee en autosave et a la deconnexion). */
-  save(accountId, snapshot) {
+  /** Vue partie : etat charge a l'entree en jeu, pour la classe choisie. */
+  gameProfile(user, classId) {
+    const state = this.ensureClass(user, classId);
+    return {
+      accountId: user.id,
+      name: user.username,
+      color: user.color,
+      classId,
+      position: state.position,
+      inventory: Inventory.sanitize(state.inventory),
+      equipment: Classes.sanitizeEquipment(classId, state.equipment),
+      stats: state.stats || emptyStats()
+    };
+  }
+
+  /** Sauvegarde de l'etat de jeu d'un personnage (autosave et deconnexion). */
+  save(accountId, classId, snapshot) {
     const user = this.users[accountId];
-    if (!user) return false;
+    if (!user || !Classes.isValidClass(classId)) return false;
+    const state = this.ensureClass(user, classId);
 
     if (snapshot.position) {
-      user.position = {
+      state.position = {
         x: Math.round(snapshot.position.x * 100) / 100,
         y: Math.round(snapshot.position.y * 100) / 100,
         angle: Math.round(snapshot.position.angle * 1000) / 1000
       };
     }
-    if (snapshot.inventory) user.inventory = Inventory.sanitize(snapshot.inventory);
-    if (snapshot.stats) user.stats = { ...user.stats, ...snapshot.stats };
+    if (snapshot.inventory) state.inventory = Inventory.sanitize(snapshot.inventory);
+    if (snapshot.equipment) state.equipment = Classes.sanitizeEquipment(classId, snapshot.equipment);
+    if (snapshot.stats) state.stats = { ...state.stats, ...snapshot.stats };
     user.lastSeen = Date.now();
 
     this.store.touch();
     return true;
   }
 
-  markSession(accountId) {
+  markSession(accountId, classId) {
     const user = this.users[accountId];
     if (!user) return;
-    user.stats.sessions = (user.stats.sessions || 0) + 1;
+    const state = this.ensureClass(user, classId);
+    state.stats.sessions = (state.stats.sessions || 0) + 1;
+    user.lastClass = classId;
     user.lastSeen = Date.now();
     this.store.touch();
   }
