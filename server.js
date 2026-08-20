@@ -8,6 +8,7 @@ const RoomManager = require('./server/RoomManager');
 const Accounts = require('./server/accounts');
 const Classes = require('./server/classes');
 const TradeManager = require('./server/trade');
+const { ChatManager, publicCatalog: chatCatalog } = require('./server/chat');
 const { ITEMS } = require('./server/items');
 
 const app = express();
@@ -18,6 +19,7 @@ const PORT = process.env.PORT || 3000;
 const rooms = new RoomManager();
 const accounts = new Accounts();
 const trades = new TradeManager(rooms);
+const chat = new ChatManager(rooms);
 const online = new Map(); // accountId -> socket.id (un seul jeu par compte)
 
 app.use(express.json({ limit: '8kb' }));
@@ -50,6 +52,9 @@ app.get('/api/me', (req, res) => {
 app.get('/api/classes', (req, res) => {
   res.json({ classes: Classes.publicCatalog(), slots: Classes.EQUIP_SLOTS, labels: Classes.SLOT_LABELS });
 });
+
+/** Catalogue des canaux de discussion. */
+app.get('/api/chat/channels', (req, res) => res.json({ channels: chatCatalog() }));
 
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
@@ -130,6 +135,8 @@ io.on('connection', (socket) => {
       },
       inventory: player.inventory.toJSON(),
       equipment: player.equipment,
+      channels: chatCatalog(),
+      chatHistory: chat.historyFor(room.id),
       snapshot: room.snapshot()
     });
 
@@ -137,6 +144,15 @@ io.on('connection', (socket) => {
       id: player.id, name: player.name, color: player.color,
       classId: player.classId, restored: player.restored
     });
+
+    chat.roomNotice(io, room, `${player.name} entre dans la salle.`);
+  });
+
+  // --- Discussion --------------------------------------------------------
+  socket.on('chat:send', (payload = {}) => {
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (player) chat.send(io, socket.id, room, player, payload);
   });
 
   socket.on('input', (cmd) => {
@@ -190,7 +206,10 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     if (!room) return;
     const player = saveAndDetach(socket.id, room);
-    if (player) io.to(room.id).emit('player:leave', { id: socket.id, name: player.name });
+    if (player) {
+      io.to(room.id).emit('player:leave', { id: socket.id, name: player.name });
+      chat.roomNotice(io, room, `${player.name} quitte la salle.`);
+    }
     rooms.cleanup(room.id);
     room = null;
     accountId = null;
@@ -244,6 +263,7 @@ setInterval(() => {
     }
   }
   accounts.flush();
+  chat.prune();
 }, CONFIG.SAVE.autosaveMs);
 
 server.listen(PORT, '0.0.0.0', () => {

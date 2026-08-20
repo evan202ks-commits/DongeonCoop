@@ -48,6 +48,15 @@ const CONFIG = {
     autosaveMs: 30000   // sauvegarde periodique des joueurs connectes
   },
 
+  CHAT: {
+    maxLength: 256,     // longueur max d'un message
+    historySize: 80,    // messages gardes par salle (et pour les canaux serveur)
+    burst: 5,           // messages autorises coup sur coup
+    refillMs: 1200,     // un jeton de parole regagne toutes les 1,2 s
+    muteMs: 5000,       // silence impose apres un flood
+    bubbleMs: 6500      // duree de la bulle au-dessus du personnage
+  },
+
   TRADE: {
     requestRange: 160,      // distance max (px) pour proposer un echange a un autre joueur
     requestTimeoutMs: 20000,// delai avant expiration d'une demande sans reponse

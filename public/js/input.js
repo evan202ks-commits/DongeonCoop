@@ -10,11 +10,20 @@ export class Input {
     this.stick = this.stickWrap.querySelector('.stick');
     this.knob = this.stickWrap.querySelector('.knob');
 
+    // Taper "z" dans le chat (ou dans le formulaire de connexion) ne doit pas
+    // faire courir le personnage : tant qu'un champ a le focus, on ignore tout.
+    const typing = (e) => {
+      const t = e.target;
+      return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    };
+
     window.addEventListener('keydown', (e) => {
+      if (typing(e)) { this.keys.clear(); return; }
       this.keys.add(e.key.toLowerCase());
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key.toLowerCase())) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+    document.addEventListener('focusin', (e) => { if (typing(e)) this.keys.clear(); });
     window.addEventListener('blur', () => this.keys.clear());
 
     if (matchMedia('(pointer:coarse)').matches) this.enableTouch();

@@ -76,6 +76,14 @@ export class Renderer {
     const sorted = [...players].sort((a, b) => a.y - b.y);
     for (const p of sorted) this.drawPlayer(p, p.id === selfId, now);
 
+    // Les bulles passent apres tous les corps : aucune ne se fait recouvrir.
+    for (const p of sorted) {
+      if (!p.bubble) continue;
+      const lift = (1 - (p.dropProgress ?? 1)) * 220;
+      const head = p.y - lift - this.config.PLAYER.radius - (this.classes[p.classId] ? 32 : 20);
+      this.drawBubble(p, head, now);
+    }
+
     this.drawLights(now);
     if (this.debug) this.drawCollision();
 
@@ -312,5 +320,81 @@ export class Renderer {
       ctx.fillStyle = p.color;
       ctx.fillText(cls.name, p.x, by - r - 21);
     }
+
+  }
+
+  /** Decoupe un texte en lignes qui tiennent dans `maxWidth`. */
+  wrapText(text, maxWidth, maxLines) {
+    const ctx = this.ctx;
+    const words = String(text).split(' ');
+    const lines = [];
+    let line = '';
+
+    for (const word of words) {
+      const attempt = line ? `${line} ${word}` : word;
+      if (ctx.measureText(attempt).width <= maxWidth || !line) {
+        line = attempt;
+      } else {
+        lines.push(line);
+        line = word;
+        if (lines.length === maxLines) break;
+      }
+    }
+    if (lines.length < maxLines && line) lines.push(line);
+
+    // Texte trop long : on coupe proprement sur la derniere ligne.
+    if (lines.length === maxLines) {
+      let last = lines[maxLines - 1];
+      if (ctx.measureText(last).width > maxWidth || words.join(' ').length > lines.join(' ').length) {
+        while (last.length > 1 && ctx.measureText(`${last}…`).width > maxWidth) last = last.slice(0, -1);
+        if (words.join(' ').length > lines.join(' ').length) lines[maxLines - 1] = `${last}…`;
+      }
+    }
+    return lines;
+  }
+
+  /** Phylactere arrondi avec sa petite pointe, centre au-dessus du personnage. */
+  drawBubble(p, baseY, now) {
+    const ctx = this.ctx;
+    const { text, until, kind } = p.bubble;
+    const remain = until - now;
+    if (remain <= 0) return;
+
+    const alpha = Math.min(1, remain / 450);   // fondu de sortie
+    const padX = 9, padY = 6, lineH = 15, maxW = 210, radius = 8;
+
+    ctx.save();
+    ctx.font = `${kind === 'emote' ? 'italic ' : ''}600 12.5px Segoe UI, Roboto, Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+
+    const lines = this.wrapText(text, maxW, 3);
+    const w = Math.min(maxW, Math.max(...lines.map(l => ctx.measureText(l).width))) + padX * 2;
+    const h = lines.length * lineH + padY * 2;
+    const x = p.x - w / 2;
+    const y = baseY - h - 8;
+
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, radius);
+    else ctx.rect(x, y, w, h);
+    ctx.fillStyle = 'rgba(12,18,30,0.92)';
+    ctx.fill();
+    ctx.strokeStyle = kind === 'emote' ? 'rgba(148,163,184,0.7)' : (p.color || '#94a3b8');
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Pointe vers le personnage
+    ctx.beginPath();
+    ctx.moveTo(p.x - 6, y + h - 1);
+    ctx.lineTo(p.x, y + h + 8);
+    ctx.lineTo(p.x + 6, y + h - 1);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(12,18,30,0.92)';
+    ctx.fill();
+
+    ctx.fillStyle = kind === 'emote' ? '#cbd5e1' : '#f1f5f9';
+    lines.forEach((line, i) => ctx.fillText(line, p.x, y + padY + lineH * (i + 1) - 4));
+    ctx.restore();
   }
 }

@@ -8,6 +8,7 @@
 npm install
 npm start          # http://localhost:3000
 npm test           # tests de fumée (serveur déjà lancé)
+npm run test:chat  # tests de fumée du chat
 ```
 
 ## Architecture
@@ -23,15 +24,39 @@ server/classes.js       Les 4 classes, leurs artefacts, calcul des stats effecti
 server/items.js         Catalogue d'objets (butin + artefacts) et tirage pondéré
 server/Room.js          Instance de salle : joueurs, butin au sol, simulation, snapshots
 server/RoomManager.js   Répartition des joueurs, création de salles au-delà de 16
+server/chat.js          Chat : canaux, portées, chuchotements, anti-flood, historique
 public/js/auth.js       Inscription/connexion, jeton en localStorage, reprise de session
 public/js/net.js        Socket, buffer de snapshots, horloge serveur, latence
 public/js/input.js      Clavier ZQSD/WASD/flèches + joystick tactile
 public/js/collision.js  Copie client du solveur de collisions (prédiction identique au serveur)
-public/js/render.js     Rendu canvas : salle, flammes animées, halos, butin, joueurs
+public/js/render.js     Rendu canvas : salle, flammes animées, halos, butin, joueurs, bulles de dialogue
+public/js/chat.js       Fenêtre de chat : onglets, canaux, commandes, historique de saisie
 public/map/             salle-donjon.png (la carte), flamme.png (les 8 images du feu), fiche-assets.png
 tools/prepare-flammes.py Regénère ces deux images depuis les sources (voir tools/README.md)
 public/js/main.js       Choix de classe, boucle client : prédiction, réconciliation, inventaire, équipement
 ```
+
+## Le chat
+
+Une fenêtre en bas à gauche, façon Dofus : onglets filtrants, canaux colorés, bulle au-dessus de la tête.
+
+| Canal | Commande | Portée | Couleur |
+|---|---|---|---|
+| Général | `/g` `/s` | ta salle uniquement | blanc cassé |
+| Commerce | `/c` | tout le serveur | orange |
+| Recrutement | `/r` | tout le serveur | vert |
+| Privé | `/w pseudo message` | un seul joueur | rose |
+| Info | — | messages du jeu (arrivées, butin, échanges) | jaune |
+
+**Raccourcis.** `Entrée` prend la parole (et renvoie au jeu une fois le message parti), `Tab` fait tourner le canal, `↑`/`↓` retrouvent les messages déjà tapés, `Échap` rend la main, un clic sur un pseudo prépare un chuchotement. `/me danse` passe en emote, `/rep` répond au dernier chuchotement, `/who` liste la salle, `/help` rappelle tout ça.
+
+**Anti-flood serveur.** Un seau à jetons par compte (`CONFIG.CHAT` : 5 messages d'affilée, un jeton regagné toutes les 1,2 s). Seau vide ou même phrase répétée trois fois → 5 s de silence. Le serveur tronque aussi à 256 caractères et retire les caractères de contrôle ; le client n'écrit jamais qu'en `textContent`, donc rien d'injectable.
+
+**Historique.** Chaque salle garde ses 80 derniers messages et les rejoue à l'arrivée d'un joueur — sans bulle périmée ni pastille de non-lu. Les canaux serveur (Commerce, Recrutement) ont leur propre historique commun.
+
+**Bulles.** Ce qui se dit dans le canal Général flotte 6,5 s au-dessus du personnage (`CONFIG.CHAT.bubbleMs`), sur une passe de rendu postérieure aux corps pour qu'aucune bulle ne soit recouverte.
+
+**Effet de bord corrigé.** `input.js` ignore désormais le clavier tant qu'un champ a le focus : taper « zad » dans le chat (ou dans le formulaire de connexion) ne fait plus courir le personnage.
 
 ## La salle
 

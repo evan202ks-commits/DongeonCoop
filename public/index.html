@@ -41,7 +41,7 @@
   </div>
 
   <div class="hud-row bottom">
-    <div class="panel" id="log"></div>
+    <div class="hud-spacer"></div>
     <div class="panel inventory">
       <h2>Équipement <span class="hint-inline" id="classLabel">—</span></h2>
       <div id="equip" class="equip"></div>
@@ -49,6 +49,20 @@
       <div id="slots" class="slots"></div>
       <div class="attrs" id="attrs"></div>
     </div>
+  </div>
+</div>
+
+<div class="chat" id="chat" hidden>
+  <div class="chat-resize" id="chatResize" title="Tirer pour agrandir"></div>
+  <div class="chat-head">
+    <div class="chat-tabs" id="chatTabs"></div>
+    <button class="chat-toggle" id="chatToggle" type="button" title="Réduire le chat">▬</button>
+  </div>
+  <div class="chat-body" id="chatBody"></div>
+  <div class="chat-form">
+    <button class="chat-channel" id="chatChannel" type="button">Général</button>
+    <input id="chatInput" type="text" maxlength="256" placeholder="Entrée pour parler…" autocomplete="off" spellcheck="false">
+    <button class="chat-send" id="chatSend" type="button" title="Envoyer">➤</button>
   </div>
 </div>
 
@@ -112,7 +126,8 @@
     <button class="action" id="submitBtn">Se connecter</button>
 
     <div class="note">Déplacements : ZQSD / WASD / flèches — joystick tactile sur mobile.<br>
-      Marche sur un objet pour le ramasser. Murs, autels et jarres bloquent le passage.</div>
+      Marche sur un objet pour le ramasser. Murs, autels et jarres bloquent le passage.<br>
+      Chat : <b>Entrée</b> pour parler, <b>Tab</b> pour changer de canal, <b>/help</b> pour les commandes.</div>
     <button class="link" id="logoutBtn" hidden type="button">Changer de compte</button>
   </div>
 </div>

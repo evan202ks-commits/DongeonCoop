@@ -13,6 +13,7 @@ export class Net {
     this.onInventory = () => {};
     this.onEvent = () => {};
     this.onTrade = () => {};
+    this.onChat = () => {};
   }
 
   connect(token, classId) {
@@ -41,6 +42,7 @@ export class Net {
     });
 
     s.on('inventory', (data) => this.onInventory(data));
+    s.on('chat:message', (msg) => this.onChat(msg));
     s.on('notice', (msg) => this.onEvent('notice', { msg }));
     s.on('auth:error', (msg) => this.onEvent('auth-error', { msg }));
     s.on('player:join', (p) => this.onEvent('join', p));
@@ -58,6 +60,11 @@ export class Net {
     s.on('trade:notice', (msg) => this.onTrade('notice', { msg }));
 
     setInterval(() => s.connected && s.emit('ping:check', Date.now()), 2000);
+  }
+
+  /** Envoi d'un message : { channel, text, to } — le serveur revalide tout. */
+  sendChat(payload) {
+    if (this.socket && this.socket.connected) this.socket.emit('chat:send', payload);
   }
 
   sendInput(cmd) {

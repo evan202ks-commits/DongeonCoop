@@ -3,9 +3,11 @@ import { Net } from './net.js';
 import { Input } from './input.js';
 import { Renderer } from './render.js';
 import { Collision } from './collision.js';
+import { Chat } from './chat.js';
 
 const net = new Net();
 const input = new Input();
+const chat = new Chat();
 let renderer = null;
 let collision = null;          // grille de collision de la salle (recue avec la config)
 
@@ -180,6 +182,18 @@ net.onWelcome = (data) => {
   el('classLabel').textContent = catalog.classes[data.you.classId].name;
   el('gate').classList.add('hidden');
   el('classGate').hidden = true;
+
+  // Le chat n'existe qu'une fois en jeu : il a besoin du catalogue de canaux
+  // et de savoir qui est "moi" pour distinguer les chuchotements envoyes/recus.
+  chat.setup({
+    channels: data.channels,
+    selfId: data.id,
+    selfName: data.you.name,
+    bubbleMs: data.config.CHAT.bubbleMs,
+    onSend: (payload) => net.sendChat(payload)
+  });
+  chat.replay(data.chatHistory);
+
   drawInventory();
   drawEquipment();
   drawAttrs(data.you.attrs);
@@ -191,6 +205,8 @@ net.onWelcome = (data) => {
     : `${self.name} entre sur le terrain en ${catalog.classes[data.you.classId].name}.`);
   requestAnimationFrame(loop);
 };
+
+net.onChat = (msg) => chat.push(msg);
 
 net.onInventory = (data) => {
   inventory = data.slots;
@@ -205,8 +221,7 @@ net.onInventory = (data) => {
 };
 
 net.onEvent = (type, payload) => {
-  if (type === 'join') log(`${payload.name} arrive sur le terrain.`);
-  if (type === 'leave') log(`${payload.name} a quitté le terrain.`);
+  // Les arrivees et departs remontent deja par le canal Info du serveur.
   if (type === 'notice') log(payload.msg);
   if (type === 'disconnect') log('Connexion perdue — reconnexion…');
   if (type === 'auth-error') {
@@ -338,12 +353,9 @@ function drawTrade() {
         : 'Compose ton offre puis valide-la.';
 }
 
+/** Toutes les nouvelles du jeu (butin, echanges, reseau) tombent dans le canal Info. */
 function log(message) {
-  const box = el('log');
-  const line = document.createElement('div');
-  line.textContent = message;
-  box.appendChild(line);
-  while (box.children.length > 4) box.removeChild(box.firstChild);
+  chat.system(message);
 }
 
 // --- Inventaire et equipement ------------------------------------------
@@ -506,7 +518,8 @@ function buildPlayerList(now) {
       x: isSelf ? self.x : a.x + (b.x - a.x) * frames.t,
       y: isSelf ? self.y : a.y + (b.y - a.y) * frames.t,
       angle: isSelf ? self.angle : b.a,
-      dropProgress: 1
+      dropProgress: 1,
+      bubble: chat.bubbleFor(b.id)
     };
 
     if (b.st === 1) {
@@ -538,6 +551,7 @@ function updateHud(players) {
   const signature = players.map(p => `${p.id}:${p.name}:${p.classId}`).join('|');
   if (signature === rosterSignature) return;
   rosterSignature = signature;
+  chat.roster = players.filter(p => p.id !== net.id).map(p => ({ id: p.id, name: p.name }));
 
   const roster = el('roster');
   roster.innerHTML = '';
@@ -579,7 +593,7 @@ for (const id of ['username', 'password']) {
 // F2 : affiche la grille de collision de la salle, pratique pour caler un
 // obstacle apres avoir touche a server/map.js.
 window.addEventListener('keydown', (e) => {
-  if (e.key !== 'F2' || !renderer) return;
+  if (e.key !== 'F2' || !renderer || chat.isTyping()) return;
   e.preventDefault();
   renderer.debug = !renderer.debug;
   log(renderer.debug ? 'Collisions affichées (F2).' : 'Collisions masquées.');
