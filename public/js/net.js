@@ -68,6 +68,11 @@ export class Net {
     if (this.socket && this.socket.connected) this.socket.emit('chat:send', payload);
   }
 
+  /** Appui sur E devant la porte — le serveur revalide la distance. */
+  useDoor() {
+    if (this.socket && this.socket.connected) this.socket.emit('door:use');
+  }
+
   sendInput(cmd) {
     if (this.socket && this.socket.connected) this.socket.emit('input', cmd);
   }

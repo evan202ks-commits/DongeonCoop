@@ -21,7 +21,7 @@ ARCH, WHEEL = DOOR['arch'], DOOR['wheel']
 CX, CY, R, BOT = ARCH['x'], ARCH['y'], ARCH['r'], ARCH['bottom']
 HX, HY, HR = WHEEL['x'], WHEEL['y'], WHEEL['r']
 
-BOX = (CX - 108, CY - R - 26, CX + 108, BOT + 38)
+BOX = (CX - 112, CY - R - 26, CX + 112, BOT + 34)
 SIZE = (BOX[2] - BOX[0], BOX[3] - BOX[1])
 OX, OY = BOX[0], BOX[1]
 
@@ -58,12 +58,17 @@ def frame(room, dx, angle):
                 fill=(int(8 + 21 * k), int(5 + 15 * k), int(16 + 25 * k), 255))
     out.paste(passage, (0, 0), mask)
 
-    # Battant : la carte elle-meme, rouage tourne autour de son moyeu.
-    leaf = room.crop(BOX).convert('RGBA')
+    # Battant : la carte elle-meme, bornee a l'arche, rouage tourne autour de
+    # son moyeu. Le rouage est pris DANS le battant, comme dans render.js :
+    # sa rotation ne peut ramener aucun pixel d'en dehors de la porte.
+    leaf = Image.new('RGBA', SIZE, (0, 0, 0, 0))
+    leaf.paste(room.crop(BOX).convert('RGBA'), (0, 0), mask)
     if angle:
         disc = Image.new('L', SIZE, 0)
         ImageDraw.Draw(disc).ellipse([HX - HR - OX, HY - HR - OY, HX + HR - OX, HY + HR - OY], fill=255)
-        leaf.paste(leaf.rotate(-angle, resample=Image.NEAREST, center=(HX - OX, HY - OY)), (0, 0), disc)
+        wheel = Image.new('RGBA', SIZE, (0, 0, 0, 0))
+        wheel.paste(leaf, (0, 0), disc)
+        leaf.alpha_composite(wheel.rotate(-angle, resample=Image.NEAREST, center=(HX - OX, HY - OY)))
 
     # Les deux moities glissent, chacune bornee a l'arche.
     for side in (-1, 1):

@@ -42,7 +42,9 @@ public/js/main.js       Choix de classe, boucle client : prédiction, réconcili
 
 La porte du haut **est déjà peinte dans `salle-donjon.png`**, fermée : aucun sprite n'a été ajouté. Le client redécoupe son battant directement dans l'image de la carte, puis l'anime. Au repos, rien n'est dessiné par-dessus — on voit la porte de la carte, au pixel près.
 
-**Le seul déclencheur est le dépôt d'un joueur.** Parler, se déplacer, ramasser, échanger : rien d'autre ne l'ouvre. Le serveur horodate l'ouverture et diffuse `door:open` à la salle ; l'horodatage part aussi dans le `welcome`, donc l'arrivant et ceux déjà présents animent sur le même instant, quelle que soit leur latence.
+**Le seul déclencheur est un appui sur `E` devant le mécanisme.** Arriver dans la salle, parler, se déplacer, ramasser, échanger : rien d'autre ne l'ouvre. Une touche `E` s'allume sur le rouage dès qu'on entre dans la zone d'action (`DOOR.use`, un disque de 118 px posé sur la dalle devant la porte) ; sur mobile, un bouton apparaît en haut de l'écran. **Le serveur revalide la distance à chaque appui** — un client modifié ne peut pas actionner la porte depuis l'autre bout de la salle — puis horodate l'ouverture et diffuse `door:open` à toute la salle. L'horodatage part aussi dans le `welcome`, donc un joueur qui arrive en pleine séquence la reprend au bon instant.
+
+Appuyer pendant que la séquence tourne ne fait rien ; appuyer **porte déjà ouverte** repousse la fermeture, donc plusieurs joueurs peuvent la maintenir ouverte sans la faire hoqueter.
 
 **Les six étapes** (`DOOR.timing` dans `server/map.js`, ~4,9 s en tout) :
 
@@ -54,11 +56,13 @@ La porte du haut **est déjà peinte dans `salle-donjon.png`**, fermée : aucun 
 | Ouverte | 1900 ms | passage libre, le temps que l'arrivant se pose |
 | Fermeture | 940 ms | les battants se rejoignent, puis le rouage se reverrouille |
 
-**Comment c'est fait.** Deux canvas hors écran découpés une fois dans la carte : le battant (l'arche) et le disque du rouage. À chaque image, on peint le passage sombre dans l'arche, puis on dessine le battant deux fois — moitié gauche translatée à gauche, moitié droite à droite, chacune bornée à l'arche, donc elles disparaissent derrière les montants. Le rouage tourne autour de son moyeu : un disque tourné reste un disque, il se recouvre exactement lui-même. Le battant est découpé 1 px plus large que l'arche qui le borne à l'écran, et les deux moitiés se chevauchent d'un pixel — sans ça, le lissage des `clip` du canvas laisse une couture visible sur la porte fermée.
+**L'arche englobe tout le vantail**, anneau de pierre clair compris — c'est l'ensemble qui s'écarte. Découpée plus étroite, elle laissait l'anneau en place pendant que l'intérieur glissait, et la porte semblait se vider au lieu de s'ouvrir. `slide` doit valoir au moins `arch.r`, sans quoi il reste un croissant de vantail dans l'ouverture (c'est vérifié par les tests).
 
-**Régler la porte** se fait dans `DOOR` (`server/map.js`) : `arch` est l'ouverture (demi-cercle de rayon `r` centré en `x, y`, prolongé jusqu'au seuil `bottom`), `wheel` le disque du mécanisme et son quart de tour, `slide` la course de chaque battant. `python3 tools/preview-porte.py` rejoue la même géométrie hors ligne et écrit une planche des six étapes : de quoi caler l'arche sans lancer le jeu.
+**Comment c'est fait.** Deux canvas hors écran découpés une fois : le battant (l'arche, pris dans la carte) et le disque du rouage, **pris dans le battant** — sa rotation ne peut donc ramener aucun pixel d'en dehors de la porte, les coulures du sol débordaient dans le disque. À chaque image, on peint le passage sombre dans l'arche, puis on dessine le battant deux fois — moitié gauche translatée à gauche, moitié droite à droite, chacune bornée à l'arche, donc elles disparaissent derrière les montants. Le rouage tourne autour de son moyeu : un disque tourné reste un disque, il se recouvre exactement lui-même. Il déborde de 4 px sous le seuil ; ce qui manque reste transparent et laisse voir le battant non tourné en dessous, ce qui ne se remarque pas. Le battant est découpé 1 px plus large que l'arche qui le borne à l'écran, et les deux moitiés se chevauchent d'un pixel — sans ça, le lissage des `clip` du canvas laisse une couture visible sur la porte fermée.
 
-**La porte ne change rien aux collisions** : elle est dans le mur du haut, et le passage sort de la carte. C'est une mise en scène d'arrivée, pas un accès.
+**Régler la porte** se fait dans `DOOR` (`server/map.js`) : `arch` est l'ouverture (demi-cercle de rayon `r` centré en `x, y`, prolongé jusqu'au seuil `bottom`), `wheel` le disque du mécanisme et son quart de tour, `slide` la course de chaque battant, `use` la zone d'action et sa portée. `python3 tools/preview-porte.py` rejoue la même géométrie hors ligne et écrit une planche des six étapes : de quoi caler l'arche sans lancer le jeu.
+
+**La porte ne change rien aux collisions** : elle est dans le mur du haut, et le passage sort de la carte. C'est une mise en scène actionnable, pas un accès — le point de `DOOR.use` est posé sur la dalle *devant* la porte, jamais dessus, sinon aucun joueur ne pourrait jamais l'atteindre.
 
 ## Le chat
 

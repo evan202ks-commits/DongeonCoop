@@ -1,7 +1,7 @@
 /**
- * Tests de fumee de la grande porte : elle ne s'ouvre qu'au depot d'un joueur,
- * tous les clients de la salle recoivent le meme horodatage, et une arrivee
- * pendant l'attente prolonge l'ouverture au lieu de rejouer la sequence.
+ * Tests de fumee de la grande porte : elle ne s'ouvre QUE sur un appui E
+ * lance depuis la zone d'action, jamais toute seule, et tous les clients de
+ * la salle animent sur le meme horodatage.
  * Lancer le serveur puis :  node test/porte.js
  */
 const { io } = require('socket.io-client');
@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 3000;
 const URL = `http://localhost:${PORT}`;
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 const DOOR = DungeonMap.DOOR;
+const dist = (p) => Math.hypot(p.x - DOOR.use.x, p.y - DOOR.use.y);
 let failures = 0;
 
 function check(label, ok, detail = '') {
@@ -33,79 +34,131 @@ async function register(username) {
 function play(token, classId) {
   return new Promise((resolve) => {
     const socket = io(URL);
-    const client = { socket, doors: [], welcome: null, chat: [] };
-    socket.on('welcome', (d) => { client.welcome = d; resolve(client); });
+    const client = { socket, doors: [], chat: [], welcome: null, seq: 0 };
+    socket.on('welcome', (d) => {
+      client.welcome = d;
+      client.pos = { x: d.you.x, y: d.you.y };
+      resolve(client);
+    });
     socket.on('door:open', (d) => client.doors.push(d));
     socket.on('chat:message', (m) => client.chat.push(m));
     socket.on('connect', () => socket.emit('join', { token, classId }));
   });
 }
 
+/** Pousse le personnage vers la porte : le serveur ne croit que sa propre position. */
+async function walkToDoor(client) {
+  for (let i = 0; i < 200; i++) {
+    const dx = DOOR.use.x - client.pos.x;
+    const dy = DOOR.use.y - client.pos.y;
+    const len = Math.hypot(dx, dy) || 1;
+    if (len < 40) break;
+    client.socket.emit('input', { seq: ++client.seq, dt: 0.05, ax: dx / len, ay: dy / len });
+    client.pos.x += (dx / len) * 250 * 0.05;
+    client.pos.y += (dy / len) * 250 * 0.05;
+    if (i % 8 === 0) await wait(20);
+  }
+  await wait(250);
+}
+
+const saidTo = (c, needle) => c.chat.some(m => m.text.includes(needle));
+
 (async () => {
   const stamp = Date.now().toString(36).slice(-5);
 
   // --- Geometrie livree au client ---------------------------------------
-  const a = await play(await register(`porteA${stamp}`), 'mage');
-  await wait(150);
-  const door = a.welcome.config.MAP.door;
+  const far = await play(await register(`porteA${stamp}`), 'mage');
+  await wait(200);
+  const door = far.welcome.config.MAP.door;
   check('geometrie de la porte envoyee dans la config',
-    !!door && !!door.arch && !!door.wheel && !!door.timing,
-    door ? `arche r=${door.arch.r} rouage r=${door.wheel.r}` : 'absente');
+    !!door && !!door.arch && !!door.wheel && !!door.use,
+    door ? `arche r=${door.arch.r} · portee ${door.use.range}` : 'absente');
   check('duree totale coherente avec les etapes',
     door.duration === door.timing.unlock + door.timing.rotate + door.timing.slide
-                    + door.timing.hold + door.timing.close,
-    `${door.duration} ms`);
-  check('instant d\'ouverture avant la duree totale',
-    door.openedAt > 0 && door.openedAt < door.duration, `${door.openedAt} ms`);
-  check('battants assez longs pour degager l\'arche', door.slide >= door.arch.r);
+                    + door.timing.hold + door.timing.close, `${door.duration} ms`);
+  check('zone d\'action posee sur la dalle, atteignable',
+    !DungeonMap.blocked(door.use.x, door.use.y, CONFIG.PLAYER.radius));
+  check('la course degage entierement l\'arche', door.slide >= door.arch.r,
+    `course ${door.slide} px pour un rayon de ${door.arch.r}`);
+  check('le rouage tient dans le battant',
+    door.wheel.y - door.wheel.r >= door.arch.y - door.arch.r
+    && Math.abs(door.wheel.x - door.arch.x) + door.wheel.r <= door.arch.r
+    && door.wheel.y + door.wheel.r - door.arch.bottom <= 6,
+    `debord bas ${door.wheel.y + door.wheel.r - door.arch.bottom} px`);
 
-  // --- Declenchement au depot -------------------------------------------
-  check('la porte s\'ouvre pour l\'arrivant', a.doors.length === 1, `${a.doors.length} evenement(s)`);
-  check('etat de la porte joint au welcome',
-    !!a.welcome.door && a.welcome.door.at === a.doors[0].at);
-  check('l\'arrivant est nomme', !!a.doors[0].by, a.doors[0].by);
+  // --- Le depot n'ouvre plus rien ---------------------------------------
+  await wait(CONFIG.SPAWN.dropMs + 300);
+  check('la porte ne s\'ouvre pas au depot du joueur', far.doors.length === 0,
+    `${far.doors.length} evenement(s)`);
+  check('porte au repos dans le welcome', far.welcome.door.at === 0);
+
+  // --- Hors de portee : refus -------------------------------------------
+  // On eloigne le personnage de la porte avant d'essayer.
+  for (let i = 0; i < 60; i++) {
+    far.socket.emit('input', { seq: ++far.seq, dt: 0.05, ax: 0, ay: 1 });
+    if (i % 8 === 0) await wait(20);
+  }
+  await wait(300);
+  far.chat.length = 0;
+  far.socket.emit('door:use');
+  await wait(250);
+  check('appui hors de portee refuse', far.doors.length === 0);
+  check('le refus est explique au joueur', saidTo(far, 'Approche-toi'),
+    (far.chat.find(m => m.ch === 'info' || m.ch === 'erreur') || {}).text);
+
+  // --- Devant la porte : ouverture --------------------------------------
+  const near = await play(await register(`porteB${stamp}`), 'archer');
+  await wait(CONFIG.SPAWN.dropMs + 300);
+  await walkToDoor(near);
+  far.doors.length = 0;
+  near.doors.length = 0;
+
+  near.socket.emit('door:use');
+  await wait(300);
+  check('appui devant la porte : elle s\'ouvre', near.doors.length === 1,
+    `${near.doors.length} evenement(s)`);
+  check('les autres joueurs de la salle sont prevenus', far.doors.length === 1);
+  check('tout le monde anime sur le meme instant',
+    near.doors[0] && far.doors[0] && near.doors[0].at === far.doors[0].at);
+  check('l\'auteur est nomme', !!near.doors[0].by, near.doors[0].by);
   check('ouverture annoncee dans le canal Info',
-    a.chat.some(m => m.ch === 'info' && m.text.includes('porte')));
+    near.chat.some(m => m.ch === 'info' && m.text.includes('mécanisme')));
 
-  // --- Aucun autre evenement ne l'ouvre ----------------------------------
-  a.doors.length = 0;
-  a.socket.emit('chat:send', { channel: 'general', text: 'je parle' });
-  a.socket.emit('input', { seq: 1, dt: 0.03, ax: 1, ay: 0 });
-  a.socket.emit('inventory:drop', 0);
+  const first = near.doors[0].at;
+
+  // --- Sequence en cours : pas de rejeu ---------------------------------
+  near.doors.length = 0;
+  await wait(600);
+  near.socket.emit('door:use');
+  await wait(250);
+  check('appui pendant la sequence : ignore', near.doors.length === 0);
+
+  // --- Porte ouverte : la fermeture est repoussee -----------------------
+  await wait(Math.max(0, DOOR.openedAt + 250 - (Date.now() - first)));
+  near.doors.length = 0;
+  near.socket.emit('door:use');
+  await wait(250);
+  check('appui porte ouverte : la fermeture est repoussee',
+    near.doors.length === 1 && near.doors[0].at > first,
+    near.doors[0] ? `${near.doors[0].at - first} ms plus tard` : 'aucun evenement');
+
+  // --- Un arrivant reprend la sequence en cours -------------------------
+  const late = await play(await register(`porteC${stamp}`), 'voleur');
+  await wait(200);
+  check('l\'arrivant recoit la sequence en cours',
+    late.welcome.door.at === near.doors[0].at,
+    `${late.welcome.door.at} vs ${near.doors[0].at}`);
+
+  // --- Rien d'autre ne l'ouvre ------------------------------------------
+  await wait(DOOR.duration + 300);
+  near.doors.length = 0;
+  near.socket.emit('chat:send', { channel: 'general', text: 'ouvre-toi' });
+  near.socket.emit('inventory:drop', 0);
+  near.socket.emit('input', { seq: ++near.seq, dt: 0.03, ax: 0, ay: -1 });
   await wait(400);
-  check('ni la parole ni le deplacement n\'ouvrent la porte', a.doors.length === 0);
+  check('ni la parole ni le deplacement n\'ouvrent la porte', near.doors.length === 0);
 
-  // --- Sequence en cours : on ne la rejoue pas ---------------------------
-  const first = a.welcome.door.at;
-  const b = await play(await register(`porteB${stamp}`), 'archer');
-  await wait(150);
-  check('deuxieme arrivee pendant la sequence : meme horodatage',
-    b.welcome.door.at === first && a.doors[0] && a.doors[0].at === first,
-    `${b.welcome.door.at} vs ${first}`);
-  check('les deux clients animent sur le meme instant',
-    b.doors[0] && b.doors[0].at === a.doors[0].at);
-
-  // --- Porte deja ecartee : l'attente est prolongee ----------------------
-  await wait(DOOR.openedAt + 200 - (Date.now() - first));
-  a.doors.length = 0;
-  const c = await play(await register(`porteC${stamp}`), 'voleur');
-  await wait(150);
-  const extended = c.welcome.door.at;
-  check('arrivee porte ouverte : la fermeture est repoussee',
-    extended > first, `${extended - first} ms plus tard`);
-  check('la porte repart de l\'instant d\'ouverture, pas du debut',
-    Math.abs((Date.now() - extended) - DOOR.openedAt) < 400,
-    `${Math.round(Date.now() - extended)} ms dans la sequence`);
-
-  // --- Une fois refermee, la sequence complete est rejouee ---------------
-  await wait(DOOR.duration - DOOR.openedAt + 300);
-  const d = await play(await register(`porteD${stamp}`), 'barbare');
-  await wait(150);
-  check('porte au repos : sequence complete rejouee',
-    Math.abs(Date.now() - d.welcome.door.at) < 400,
-    `${Math.round(Date.now() - d.welcome.door.at)} ms dans la sequence`);
-
-  for (const client of [a, b, c, d]) client.socket.close();
+  for (const client of [far, near, late]) client.socket.close();
   await wait(200);
   console.log(failures ? `\n${failures} test(s) en echec.` : '\nTout est vert.');
   process.exit(failures ? 1 : 0);

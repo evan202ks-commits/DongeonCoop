@@ -76,6 +76,7 @@ class Room {
       joinedAt: Date.now(),
       pending: [],
       lastSeq: 0,
+      lastDoorUse: 0,
       dtBudget: 0,
       lastBudgetAt: Date.now()
     };
@@ -85,11 +86,37 @@ class Room {
     return player;
   }
 
+  /** Le joueur est-il assez pres du mecanisme pour l'actionner ? */
+  canReachDoor(player) {
+    const u = DungeonMap.DOOR.use;
+    return Math.hypot(player.x - u.x, player.y - u.y) <= u.range;
+  }
+
   /**
-   * Ouvre la grande porte pour un nouvel arrivant.
-   * Trois cas : au repos, la sequence part du debut ; deja battants ecartes, on
-   * repousse simplement la fermeture ; sequence en cours, on la laisse finir
-   * (deux joueurs qui entrent ensemble ne doivent pas faire hoqueter la porte).
+   * Appui sur E : c'est le seul evenement qui ouvre la porte.
+   * Le serveur revalide la distance — un client modifie ne doit pas pouvoir
+   * l'actionner depuis l'autre bout de la salle.
+   * Renvoie { at } si la porte bouge, { error } sinon, ou { busy } si la
+   * sequence est deja en cours (rien a diffuser, rien a reprocher au joueur).
+   */
+  useDoor(player) {
+    if (player.state === 'dropping') return { error: 'Attends d\'avoir touché le sol.' };
+    if (!this.canReachDoor(player)) return { error: 'Approche-toi de la porte pour l\'actionner.' };
+
+    const now = Date.now();
+    if (now - player.lastDoorUse < 400) return { busy: true };
+    player.lastDoorUse = now;
+
+    // Sequence en cours mais battants pas encore ecartes : on la laisse finir.
+    if (now - this.doorAt < DungeonMap.DOOR.openedAt) return { busy: true };
+    return { at: this.openDoor() };
+  }
+
+  /**
+   * Ouvre la grande porte.
+   * Deux cas : au repos, la sequence part du debut ; battants deja ecartes, on
+   * repousse simplement la fermeture — plusieurs joueurs peuvent maintenir la
+   * porte ouverte sans la faire hoqueter.
    * Renvoie l'horodatage a diffuser aux clients, qui animent tous dessus.
    */
   openDoor() {

@@ -1,7 +1,7 @@
 {
   "name": "dongeon-coop",
-  "version": "1.7.0",
-  "description": "Jeu coop en ligne : salle de donjon partagee aux feux animes en multijoueur temps reel (collisions serveur autoritatives), avec comptes, choix de classe a chaque connexion (Mage/Barbare/Archer/Voleur), artefacts equipables, inventaire par classe, echanges chat multi-canaux facon Dofus et grande porte qui s'ouvre a l'arrivee des joueurs (Express + Socket.IO)",
+  "version": "1.8.1",
+  "description": "Jeu coop en ligne : salle de donjon partagee aux feux animes en multijoueur temps reel (collisions serveur autoritatives), avec comptes, choix de classe a chaque connexion (Mage/Barbare/Archer/Voleur), artefacts equipables, inventaire par classe, echanges chat multi-canaux facon Dofus et grande porte actionnable a la touche E (Express + Socket.IO)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

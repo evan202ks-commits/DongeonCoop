@@ -20,6 +20,7 @@ export class Renderer {
     this.doorLeaf = null;
     this.doorWheel = null;
     this.doorGlow = 0;
+    this.doorPrompt = 0;        // opacite de l'invite "E", lissee d'une image a l'autre
 
     this.room = new Image();
     this.roomReady = false;
@@ -52,8 +53,12 @@ export class Renderer {
     return entry.ready ? entry.img : null;
   }
 
-  /** Decoupe un morceau de la carte dans un canvas hors ecran, selon un chemin. */
-  cutFromRoom(box, path) {
+  /**
+   * Decoupe un morceau selon un chemin, dans un canvas hors ecran.
+   * `source` est soit l'image de la salle (coordonnees monde), soit un canvas
+   * deja decoupe, auquel cas on passe son origine dans `from`.
+   */
+  cutOut(box, path, source = null, from = null) {
     const cv = document.createElement('canvas');
     cv.width = box.w;
     cv.height = box.h;
@@ -63,7 +68,8 @@ export class Renderer {
     path(c, box);
     c.clip();
     c.imageSmoothingEnabled = false;
-    c.drawImage(this.room, -box.x, -box.y, this.config.WORLD.width, this.config.WORLD.height);
+    if (source) c.drawImage(source, from.x - box.x, from.y - box.y);
+    else c.drawImage(this.room, -box.x, -box.y, this.config.WORLD.width, this.config.WORLD.height);
     c.restore();
     return cv;
   }
@@ -81,7 +87,7 @@ export class Renderer {
       w: arch.r * 2 + 4,
       h: (arch.bottom - arch.y) + arch.r + 4
     };
-    this.doorLeaf = this.cutFromRoom(this.doorBox, (c, box) => {
+    this.doorLeaf = this.cutOut(this.doorBox, (c, box) => {
       const r = arch.r + 1;                 // 1 px de marge : voir buildDoor
       c.arc(arch.x - box.x, arch.y - box.y, r, Math.PI, 0);
       c.lineTo(arch.x + r - box.x, arch.bottom + 1 - box.y);
@@ -89,10 +95,17 @@ export class Renderer {
       c.closePath();
     });
 
+    // Le rouage est pris DANS le battant, pas dans la carte : ainsi sa rotation
+    // ne peut ramener aucun pixel d'en dehors de la porte (les coulures du sol
+    // debordaient dans le disque). Ce qui manque en bas du disque reste
+    // transparent, et c'est le battant non tourne qui se voit dessous.
     this.doorWheelBox = { x: wheel.x - wheel.r, y: wheel.y - wheel.r, w: wheel.r * 2, h: wheel.r * 2 };
-    this.doorWheel = this.cutFromRoom(this.doorWheelBox, (c, box) => {
-      c.arc(wheel.x - box.x, wheel.y - box.y, wheel.r, 0, Math.PI * 2);
-    });
+    this.doorWheel = this.cutOut(
+      this.doorWheelBox,
+      (c, box) => c.arc(wheel.x - box.x, wheel.y - box.y, wheel.r, 0, Math.PI * 2),
+      this.doorLeaf,
+      this.doorBox
+    );
   }
 
   /** Contour de l'ouverture : demi-cercle en haut, montants droits jusqu'au seuil. */
@@ -223,6 +236,59 @@ export class Renderer {
     ctx.restore();
   }
 
+  /**
+   * Invite d'action, posee sur le mecanisme lui-meme : une touche E qui
+   * s'allume quand on est assez pres. Elle apparait et disparait en fondu,
+   * sinon elle clignote des qu'on longe la limite de portee.
+   */
+  drawDoorPrompt(active, now) {
+    this.doorPrompt += ((active ? 1 : 0) - this.doorPrompt) * 0.16;
+    if (this.doorPrompt < 0.02) return;
+
+    const ctx = this.ctx;
+    const { wheel, arch } = this.door;
+    const alpha = this.doorPrompt;
+    const pulse = 0.86 + Math.sin(now / 380) * 0.14;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Touche
+    const size = 24;
+    const x = wheel.x - size / 2;
+    const y = wheel.y - size / 2 - 4;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, size, size, 6);
+    else ctx.rect(x, y, size, size);
+    ctx.fillStyle = 'rgba(10,7,18,0.86)';
+    ctx.fill();
+    ctx.strokeStyle = `rgba(232,214,255,${pulse})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = '800 14px Segoe UI, Roboto, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = `rgba(245,238,255,${pulse})`;
+    ctx.fillText('E', wheel.x, y + size / 2 + 1);
+    ctx.textBaseline = 'alphabetic';
+
+    // Libelle, cale dans le bas de l'arche
+    const label = 'Ouvrir la porte';
+    ctx.font = '700 11px Segoe UI, Roboto, Arial, sans-serif';
+    const w = ctx.measureText(label).width + 14;
+    const ly = arch.bottom - 22;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(arch.x - w / 2, ly, w, 16, 5);
+    else ctx.rect(arch.x - w / 2, ly, w, 16);
+    ctx.fillStyle = 'rgba(10,7,18,0.78)';
+    ctx.fill();
+    ctx.fillStyle = 'rgba(226,214,250,0.95)';
+    ctx.fillText(label, arch.x, ly + 12);
+
+    ctx.restore();
+  }
+
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.canvas.width = w * this.dpr;
@@ -239,7 +305,7 @@ export class Renderer {
     this.camera.y = h >= height ? (height - h) / 2 : Math.max(0, Math.min(height - h, y - h / 2));
   }
 
-  frame(players, items, selfId, now, doorElapsed = null) {
+  frame(players, items, selfId, now, doorElapsed = null, promptDoor = false) {
     const ctx = this.ctx;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.view.w, this.view.h);
@@ -264,6 +330,7 @@ export class Renderer {
     }
 
     this.drawLights(now);
+    this.drawDoorPrompt(promptDoor, now);
     if (this.debug) this.drawCollision();
 
     ctx.restore();

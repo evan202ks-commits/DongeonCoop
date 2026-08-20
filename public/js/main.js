@@ -24,6 +24,7 @@ let catalog = null;             // { classes, slots, labels }
 let account = null;             // profil compte : progression de chaque classe
 let joined = false;
 let doorAt = 0;                 // horodatage serveur du dernier declenchement de la porte
+let doorReachable = false;      // le joueur est-il devant le mecanisme ?
 let mode = 'login';
 let lastFrame = performance.now();
 
@@ -230,6 +231,8 @@ net.onEvent = (type, payload) => {
   if (type === 'disconnect') log('Connexion perdue — reconnexion…');
   if (type === 'auth-error') {
     joined = false;
+    doorReachable = false;
+    el('doorBtn').hidden = true;
     el('classGate').hidden = true;
     el('gate').classList.remove('hidden');
     el('submitBtn').disabled = false;
@@ -465,10 +468,26 @@ function loop(now) {
   // La porte est animee sur l'horloge serveur : tout le monde la voit bouger
   // au meme instant, quelle que soit sa latence.
   const doorElapsed = doorAt ? Date.now() + net.clockOffset - doorAt : null;
+  updateDoorReach(doorElapsed);
 
   renderer.centerOn(self.x, self.y);
-  renderer.frame(players, items, net.id, now, doorElapsed);
+  renderer.frame(players, items, net.id, now, doorElapsed, doorReachable);
   updateHud(players);
+}
+
+/**
+ * Portee du mecanisme : meme distance que celle revalidee par le serveur.
+ * L'invite disparait des que la sequence est lancee — inutile de proposer
+ * d'ouvrir une porte qui s'ouvre deja.
+ */
+function updateDoorReach(doorElapsed) {
+  const use = net.config.MAP.door.use;
+  const busy = doorElapsed != null && doorElapsed >= 0 && doorElapsed < net.config.MAP.door.duration;
+  const near = Math.hypot(self.x - use.x, self.y - use.y) <= use.range;
+  const next = near && !busy;
+  if (next === doorReachable) return;
+  doorReachable = next;
+  el('doorBtn').hidden = !next;
 }
 
 function sendInputs(dt) {
@@ -600,6 +619,15 @@ for (const id of ['username', 'password']) {
 // Derniere sauvegarde avant fermeture de l'onglet.
 // F2 : affiche la grille de collision de la salle, pratique pour caler un
 // obstacle apres avoir touche a server/map.js.
+// E : actionne la grande porte quand on est devant. Ignore pendant qu'on tape.
+window.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 'e' || !joined || chat.isTyping()) return;
+  e.preventDefault();
+  net.useDoor();
+});
+
+el('doorBtn').addEventListener('click', () => net.useDoor());
+
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'F2' || !renderer || chat.isTyping()) return;
   e.preventDefault();

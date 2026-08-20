@@ -107,13 +107,22 @@ const LIGHTS = [
  *           en (x, y), prolonge en bas jusqu'a `bottom` (le seuil).
  * `wheel` : le disque du mecanisme, centre sur son moyeu (plus haut que le
  *           centre de l'arche), et le quart de tour qu'il effectue.
- * `slide` : course de chaque battant ; a 64 px les deux moities disparaissent
- *           entierement derriere les montants.
+ * `slide` : course de chaque battant ; il doit valoir au moins le rayon de
+ *           l'arche pour que les deux moities disparaissent entierement
+ *           derriere les montants.
+ * `use`   : la zone ou la touche E actionne le mecanisme. Le point est pose sur
+ *           la dalle devant la porte, pas sur la porte elle-meme, qui est dans
+ *           le mur : un joueur ne peut jamais l'atteindre. Le serveur revalide
+ *           cette distance a chaque appui.
  */
 const DOOR = {
-  arch: { x: 838, y: 163, r: 59, bottom: 188 },
-  wheel: { x: 838, y: 150, r: 46, turn: 45 },
-  slide: 64,
+  // L'arche englobe TOUT le vantail, anneau de pierre clair compris : c'est
+  // l'ensemble qui doit s'ecarter. Une arche plus etroite laissait l'anneau
+  // en place pendant que l'interieur glissait, et la porte semblait se vider.
+  arch: { x: 836, y: 156, r: 66, bottom: 192 },
+  wheel: { x: 836, y: 150, r: 46, turn: 45 },
+  slide: 70,
+  use: { x: 836, y: 214, range: 118 },
   glow: { r: 175, color: '#c8a2ff' },
   // Duree de chaque etape, en ms : verrou, rotation, ecartement, attente, fermeture.
   timing: { unlock: 520, rotate: 820, slide: 760, hold: 1900, close: 940 }

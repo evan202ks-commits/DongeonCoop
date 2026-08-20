@@ -119,11 +119,6 @@ io.on('connection', (socket) => {
     const player = room.add(socket.id, profile);
     socket.join(room.id);
 
-    // Le depot d'un joueur est le seul evenement qui ouvre la grande porte.
-    // L'horodatage part avec le welcome, pour que l'arrivant demarre
-    // l'animation au meme instant que ceux qui sont deja la.
-    const doorAt = room.openDoor();
-
     socket.emit('welcome', {
       id: socket.id,
       roomId: room.id,
@@ -140,7 +135,7 @@ io.on('connection', (socket) => {
       },
       inventory: player.inventory.toJSON(),
       equipment: player.equipment,
-      door: { at: doorAt },
+      door: room.doorState(),   // sequence en cours : l'arrivant la reprend au bon instant
       channels: chatCatalog(),
       chatHistory: chat.historyFor(room.id),
       snapshot: room.snapshot()
@@ -151,8 +146,7 @@ io.on('connection', (socket) => {
       classId: player.classId, restored: player.restored
     });
 
-    io.to(room.id).emit('door:open', { at: doorAt, by: player.name });
-    chat.roomNotice(io, room, `La grande porte s'ouvre : ${player.name} entre dans la salle.`);
+    chat.roomNotice(io, room, `${player.name} entre dans la salle.`);
   });
 
   // --- Discussion --------------------------------------------------------
@@ -160,6 +154,20 @@ io.on('connection', (socket) => {
     if (!room) return;
     const player = room.players.get(socket.id);
     if (player) chat.send(io, socket.id, room, player, payload);
+  });
+
+  /** Touche E devant la porte : le seul evenement qui ouvre le mecanisme. */
+  socket.on('door:use', () => {
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (!player) return;
+
+    const result = room.useDoor(player);
+    if (result.error) return chat.notice(io, socket.id, result.error);
+    if (result.busy) return;
+
+    io.to(room.id).emit('door:open', { at: result.at, by: player.name });
+    chat.roomNotice(io, room, `${player.name} actionne le mécanisme : la grande porte s'ouvre.`);
   });
 
   socket.on('input', (cmd) => {
