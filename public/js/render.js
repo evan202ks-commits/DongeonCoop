@@ -14,9 +14,16 @@ export class Renderer {
 
     // Image de la salle : elle sert de sol, de murs et de decor. Tant qu'elle
     // n'est pas chargee, on peint un aplat sombre pour eviter le flash blanc.
+    // La porte du haut est peinte dans la carte : ses battants en sont
+    // redecoupes une fois pour toutes (buildDoor), pour pouvoir les ecarter.
+    this.door = this.map.door;
+    this.doorLeaf = null;
+    this.doorWheel = null;
+    this.doorGlow = 0;
+
     this.room = new Image();
     this.roomReady = false;
-    this.room.onload = () => { this.roomReady = true; };
+    this.room.onload = () => { this.roomReady = true; this.buildDoor(); };
     this.room.src = this.map.image;
 
     // Planche des flammes : 8 images cote a cote, fond transparent. Les
@@ -45,6 +52,177 @@ export class Renderer {
     return entry.ready ? entry.img : null;
   }
 
+  /** Decoupe un morceau de la carte dans un canvas hors ecran, selon un chemin. */
+  cutFromRoom(box, path) {
+    const cv = document.createElement('canvas');
+    cv.width = box.w;
+    cv.height = box.h;
+    const c = cv.getContext('2d');
+    c.save();
+    c.beginPath();
+    path(c, box);
+    c.clip();
+    c.imageSmoothingEnabled = false;
+    c.drawImage(this.room, -box.x, -box.y, this.config.WORLD.width, this.config.WORLD.height);
+    c.restore();
+    return cv;
+  }
+
+  /**
+   * Deux sprites : le battant entier (l'arche) et le disque du rouage.
+   * Le rouage tourne autour de son moyeu : un disque tourne reste un disque,
+   * donc il se recouvre exactement lui-meme, sans coin transparent a rattraper.
+   */
+  buildDoor() {
+    const { arch, wheel } = this.door;
+    this.doorBox = {
+      x: arch.x - arch.r - 2,
+      y: arch.y - arch.r - 2,
+      w: arch.r * 2 + 4,
+      h: (arch.bottom - arch.y) + arch.r + 4
+    };
+    this.doorLeaf = this.cutFromRoom(this.doorBox, (c, box) => {
+      const r = arch.r + 1;                 // 1 px de marge : voir buildDoor
+      c.arc(arch.x - box.x, arch.y - box.y, r, Math.PI, 0);
+      c.lineTo(arch.x + r - box.x, arch.bottom + 1 - box.y);
+      c.lineTo(arch.x - r - box.x, arch.bottom + 1 - box.y);
+      c.closePath();
+    });
+
+    this.doorWheelBox = { x: wheel.x - wheel.r, y: wheel.y - wheel.r, w: wheel.r * 2, h: wheel.r * 2 };
+    this.doorWheel = this.cutFromRoom(this.doorWheelBox, (c, box) => {
+      c.arc(wheel.x - box.x, wheel.y - box.y, wheel.r, 0, Math.PI * 2);
+    });
+  }
+
+  /** Contour de l'ouverture : demi-cercle en haut, montants droits jusqu'au seuil. */
+  archPath(ctx) {
+    const { arch } = this.door;
+    ctx.beginPath();
+    ctx.arc(arch.x, arch.y, arch.r, Math.PI, 0);
+    ctx.lineTo(arch.x + arch.r, arch.bottom);
+    ctx.lineTo(arch.x - arch.r, arch.bottom);
+    ctx.closePath();
+  }
+
+  /**
+   * Etat de la porte a `elapsed` ms du declenchement, ou null au repos —
+   * auquel cas on ne dessine rien et c'est la porte fermee de la carte
+   * qu'on voit, au pixel pres.
+   */
+  doorState(elapsed) {
+    const d = this.door;
+    if (elapsed == null || elapsed < 0 || elapsed > d.duration) return null;
+
+    const T = d.timing;
+    const turn = (d.wheel.turn * Math.PI) / 180;
+    const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+    let t = elapsed;
+
+    // 1-2. Le verrou cede : le mecanisme s'illumine et tremble sur place.
+    if (t < T.unlock) {
+      const k = t / T.unlock;
+      return { angle: 0, dx: 0, glow: k, shake: Math.sin(t / 21) * 1.3 * k };
+    }
+    t -= T.unlock;
+
+    // 3. Rotation : quart de tour du rouage, l'X devient une croix droite.
+    if (t < T.rotate) {
+      return { angle: turn * ease(t / T.rotate), dx: 0, glow: 1, shake: Math.sin(t / 33) * 0.7 };
+    }
+    t -= T.rotate;
+
+    // 4-5. Deplacement : les deux moities s'ecartent et decouvrent le passage.
+    if (t < T.slide) {
+      return { angle: turn, dx: d.slide * ease(t / T.slide), glow: 1, shake: Math.sin(t / 27) * 0.5 };
+    }
+    t -= T.slide;
+
+    // 6. Ouverte : passage libre, le temps que l'arrivant se pose.
+    if (t < T.hold) return { angle: turn, dx: d.slide, glow: 0.72, shake: 0 };
+    t -= T.hold;
+
+    // 7. Fermeture : les battants se rejoignent, puis le rouage se reverrouille.
+    const k = t / T.close;
+    return {
+      angle: turn * (1 - Math.max(0, (k - 0.55) / 0.45)),
+      dx: d.slide * (1 - ease(Math.min(1, k / 0.6))),
+      glow: 0.5 * (1 - k),
+      shake: 0
+    };
+  }
+
+  /** Le battant complet (arche + rouage a son angle courant), a sa place sur la carte. */
+  drawDoorLeaf(angle) {
+    const ctx = this.ctx;
+    const { wheel } = this.door;
+    ctx.drawImage(this.doorLeaf, this.doorBox.x, this.doorBox.y);
+    if (!angle) return;
+    ctx.save();
+    ctx.translate(wheel.x, wheel.y);
+    ctx.rotate(angle);
+    ctx.translate(-wheel.x, -wheel.y);
+    ctx.drawImage(this.doorWheel, this.doorWheelBox.x, this.doorWheelBox.y);
+    ctx.restore();
+  }
+
+  /**
+   * La porte, dessinee par-dessus la carte : le passage sombre au fond, puis
+   * les deux moities du battant translatees chacune de son cote. Tout est
+   * borne a l'arche, donc les battants disparaissent derriere les montants.
+   */
+  drawDoor(elapsed) {
+    const state = this.doorState(elapsed);
+    this.doorGlow = state ? state.glow : 0;
+    if (!state || !this.doorLeaf) return;
+
+    const ctx = this.ctx;
+    const { arch } = this.door;
+    const shake = state.shake || 0;
+
+    ctx.save();
+    this.archPath(ctx);
+    ctx.clip();
+
+    // Le passage : noir violace, un peu plus clair pres du seuil, assombri
+    // sur les cotes pour qu'il se creuse au lieu de faire un trou plat.
+    const top = arch.y - arch.r;
+    const grad = ctx.createLinearGradient(0, top, 0, arch.bottom);
+    grad.addColorStop(0, '#080510');
+    grad.addColorStop(1, '#1d1429');
+    ctx.fillStyle = grad;
+    ctx.fillRect(arch.x - arch.r, top, arch.r * 2, arch.bottom - top);
+
+    const sides = ctx.createLinearGradient(arch.x - arch.r, 0, arch.x + arch.r, 0);
+    sides.addColorStop(0, 'rgba(0,0,0,0.55)');
+    sides.addColorStop(0.5, 'rgba(0,0,0,0)');
+    sides.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = sides;
+    ctx.fillRect(arch.x - arch.r, top, arch.r * 2, arch.bottom - top);
+
+    // La lumiere de la salle mord sur les premieres dalles du couloir.
+    const sill = ctx.createLinearGradient(0, arch.bottom - 12, 0, arch.bottom);
+    sill.addColorStop(0, 'rgba(150,110,205,0)');
+    sill.addColorStop(1, 'rgba(150,110,205,0.28)');
+    ctx.fillStyle = sill;
+    ctx.fillRect(arch.x - arch.r, arch.bottom - 12, arch.r * 2, 12);
+
+    ctx.imageSmoothingEnabled = false;
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(side * state.dx + shake * side, 0);
+      // La demi-arche est decoupee APRES la translation : elle suit son battant.
+      ctx.beginPath();
+      if (side < 0) ctx.rect(arch.x - arch.r - 3, arch.y - arch.r - 3, arch.r + 4, arch.r * 2 + 6);
+      else ctx.rect(arch.x, arch.y - arch.r - 3, arch.r + 4, arch.r * 2 + 6);
+      ctx.clip();
+      this.drawDoorLeaf(state.angle);
+      ctx.restore();
+    }
+    ctx.imageSmoothingEnabled = true;
+    ctx.restore();
+  }
+
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.canvas.width = w * this.dpr;
@@ -61,7 +239,7 @@ export class Renderer {
     this.camera.y = h >= height ? (height - h) / 2 : Math.max(0, Math.min(height - h, y - h / 2));
   }
 
-  frame(players, items, selfId, now) {
+  frame(players, items, selfId, now, doorElapsed = null) {
     const ctx = this.ctx;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.view.w, this.view.h);
@@ -69,6 +247,7 @@ export class Renderer {
     ctx.translate(-this.camera.x, -this.camera.y);
 
     this.drawGround();
+    this.drawDoor(doorElapsed);   // sur le mur du haut : derriere le butin et les joueurs
     this.drawFlames(now);
     for (const item of items) this.drawItem(item, now);
 
@@ -160,6 +339,12 @@ export class Renderer {
       // meme rythme que la flamme au lieu de suivre une sinusoide a part.
       const level = levels[this.flameFrame(flame, now)];
       halo(flame.x, flame.y - 12 * flame.scale, flame.glow * (0.7 + level * 0.35), flame.color, level);
+    }
+
+    // Halo de la grande porte : il monte avec le verrou et retombe a la fermeture.
+    if (this.doorGlow > 0.02) {
+      const d = this.door;
+      halo(d.arch.x, d.arch.y, d.glow.r * (0.62 + 0.38 * this.doorGlow), d.glow.color, this.doorGlow * 0.95);
     }
 
     for (const light of this.map.lights) {

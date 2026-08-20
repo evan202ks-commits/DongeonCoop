@@ -9,6 +9,7 @@ npm install
 npm start          # http://localhost:3000
 npm test           # tests de fumée (serveur déjà lancé)
 npm run test:chat  # tests de fumée du chat
+npm run test:porte # tests de fumée de la porte
 ```
 
 ## Architecture
@@ -33,8 +34,31 @@ public/js/render.js     Rendu canvas : salle, flammes animées, halos, butin, jo
 public/js/chat.js       Fenêtre de chat : onglets, canaux, commandes, historique de saisie
 public/map/             salle-donjon.png (la carte), flamme.png (les 8 images du feu), fiche-assets.png
 tools/prepare-flammes.py Regénère ces deux images depuis les sources (voir tools/README.md)
+tools/preview-porte.py  Aperçu hors ligne de l'ouverture de la porte (calage de l'arche)
 public/js/main.js       Choix de classe, boucle client : prédiction, réconciliation, inventaire, équipement
 ```
+
+## La grande porte
+
+La porte du haut **est déjà peinte dans `salle-donjon.png`**, fermée : aucun sprite n'a été ajouté. Le client redécoupe son battant directement dans l'image de la carte, puis l'anime. Au repos, rien n'est dessiné par-dessus — on voit la porte de la carte, au pixel près.
+
+**Le seul déclencheur est le dépôt d'un joueur.** Parler, se déplacer, ramasser, échanger : rien d'autre ne l'ouvre. Le serveur horodate l'ouverture et diffuse `door:open` à la salle ; l'horodatage part aussi dans le `welcome`, donc l'arrivant et ceux déjà présents animent sur le même instant, quelle que soit leur latence.
+
+**Les six étapes** (`DOOR.timing` dans `server/map.js`, ~4,9 s en tout) :
+
+| Étape | Durée | Ce qui bouge |
+|---|---|---|
+| Déverrouillage | 520 ms | halo qui monte, le battant tremble sur place |
+| Rotation | 820 ms | quart de tour du rouage — l'X devient une croix droite |
+| Déplacement | 760 ms | les deux moitiés s'écartent |
+| Ouverte | 1900 ms | passage libre, le temps que l'arrivant se pose |
+| Fermeture | 940 ms | les battants se rejoignent, puis le rouage se reverrouille |
+
+**Comment c'est fait.** Deux canvas hors écran découpés une fois dans la carte : le battant (l'arche) et le disque du rouage. À chaque image, on peint le passage sombre dans l'arche, puis on dessine le battant deux fois — moitié gauche translatée à gauche, moitié droite à droite, chacune bornée à l'arche, donc elles disparaissent derrière les montants. Le rouage tourne autour de son moyeu : un disque tourné reste un disque, il se recouvre exactement lui-même. Le battant est découpé 1 px plus large que l'arche qui le borne à l'écran, et les deux moitiés se chevauchent d'un pixel — sans ça, le lissage des `clip` du canvas laisse une couture visible sur la porte fermée.
+
+**Régler la porte** se fait dans `DOOR` (`server/map.js`) : `arch` est l'ouverture (demi-cercle de rayon `r` centré en `x, y`, prolongé jusqu'au seuil `bottom`), `wheel` le disque du mécanisme et son quart de tour, `slide` la course de chaque battant. `python3 tools/preview-porte.py` rejoue la même géométrie hors ligne et écrit une planche des six étapes : de quoi caler l'arche sans lancer le jeu.
+
+**La porte ne change rien aux collisions** : elle est dans le mur du haut, et le passage sort de la carte. C'est une mise en scène d'arrivée, pas un accès.
 
 ## Le chat
 

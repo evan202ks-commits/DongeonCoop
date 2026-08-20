@@ -119,6 +119,11 @@ io.on('connection', (socket) => {
     const player = room.add(socket.id, profile);
     socket.join(room.id);
 
+    // Le depot d'un joueur est le seul evenement qui ouvre la grande porte.
+    // L'horodatage part avec le welcome, pour que l'arrivant demarre
+    // l'animation au meme instant que ceux qui sont deja la.
+    const doorAt = room.openDoor();
+
     socket.emit('welcome', {
       id: socket.id,
       roomId: room.id,
@@ -135,6 +140,7 @@ io.on('connection', (socket) => {
       },
       inventory: player.inventory.toJSON(),
       equipment: player.equipment,
+      door: { at: doorAt },
       channels: chatCatalog(),
       chatHistory: chat.historyFor(room.id),
       snapshot: room.snapshot()
@@ -145,7 +151,8 @@ io.on('connection', (socket) => {
       classId: player.classId, restored: player.restored
     });
 
-    chat.roomNotice(io, room, `${player.name} entre dans la salle.`);
+    io.to(room.id).emit('door:open', { at: doorAt, by: player.name });
+    chat.roomNotice(io, room, `La grande porte s'ouvre : ${player.name} entre dans la salle.`);
   });
 
   // --- Discussion --------------------------------------------------------

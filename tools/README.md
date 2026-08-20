@@ -28,3 +28,19 @@ pierre du support y est eclairee par la flamme, donc violette elle aussi, et
 aucun seuil ne les separe proprement. Les huit feux partagent l'animation du
 brasero, mise a l'echelle de leur support — dans la salle, ce sont de toute
 facon le meme dessin a des tailles differentes.
+
+## Aperçu de la porte
+
+`preview-porte.py` rejoue hors ligne l'ouverture de la grande porte, avec la
+géométrie lue dans `server/map.js` (`DOOR`) et la même mécanique que
+`public/js/render.js` :
+
+```bash
+python3 tools/preview-porte.py     # écrit /tmp/door_preview.png
+```
+
+Il écrit une planche des six étapes (fermée, déverrouillage, rotation,
+déplacement, ouverture, ouverte). C'est l'outil à utiliser pour caler `arch` et
+`wheel` : si l'arche déborde sur l'anneau de pierre ou si le rouage tourne de
+travers, ça se voit immédiatement sur la planche, sans avoir à lancer le jeu.
+Ce script ne produit aucun asset — la porte est prise dans la carte elle-même.

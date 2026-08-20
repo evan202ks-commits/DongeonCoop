@@ -18,6 +18,7 @@ class Room {
     this.tick = 0;
     this.events = [];                 // evenements a diffuser apres le pas de simulation
     this.nextLootAt = Date.now() + 1000;
+    this.doorAt = 0;                  // horodatage du dernier declenchement de la porte
   }
 
   get count() {
@@ -82,6 +83,26 @@ class Room {
     Room.clampToWorld(player);
     this.players.set(socketId, player);
     return player;
+  }
+
+  /**
+   * Ouvre la grande porte pour un nouvel arrivant.
+   * Trois cas : au repos, la sequence part du debut ; deja battants ecartes, on
+   * repousse simplement la fermeture ; sequence en cours, on la laisse finir
+   * (deux joueurs qui entrent ensemble ne doivent pas faire hoqueter la porte).
+   * Renvoie l'horodatage a diffuser aux clients, qui animent tous dessus.
+   */
+  openDoor() {
+    const now = Date.now();
+    const elapsed = now - this.doorAt;
+    if (elapsed >= DungeonMap.DOOR.duration) this.doorAt = now;
+    else if (elapsed >= DungeonMap.DOOR.openedAt) this.doorAt = now - DungeonMap.DOOR.openedAt;
+    return this.doorAt;
+  }
+
+  /** Etat envoye a la connexion : un joueur qui arrive en pleine sequence la reprend en cours. */
+  doorState() {
+    return { at: this.doorAt };
   }
 
   remove(socketId) {

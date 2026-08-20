@@ -94,6 +94,37 @@ const LIGHTS = [
   { x: 836, y: 498, r: 190, color: '#b39ddb' }
 ];
 
+/**
+ * La grande porte du haut de la salle.
+ *
+ * Elle est deja peinte dans salle-donjon.png, fermee : aucun asset a ajouter.
+ * Le client redecoupe son battant dans l'image de la carte (l'arche ci-dessous),
+ * fait tourner le rouage puis ecarte les deux moities, ce qui decouvre le
+ * passage sombre. Au repos, rien n'est dessine : on voit la porte de la carte,
+ * au pixel pres.
+ *
+ * `arch`  : l'ouverture, mesuree sur l'image — demi-cercle de rayon `r` centre
+ *           en (x, y), prolonge en bas jusqu'a `bottom` (le seuil).
+ * `wheel` : le disque du mecanisme, centre sur son moyeu (plus haut que le
+ *           centre de l'arche), et le quart de tour qu'il effectue.
+ * `slide` : course de chaque battant ; a 64 px les deux moities disparaissent
+ *           entierement derriere les montants.
+ */
+const DOOR = {
+  arch: { x: 838, y: 163, r: 59, bottom: 188 },
+  wheel: { x: 838, y: 150, r: 46, turn: 45 },
+  slide: 64,
+  glow: { r: 175, color: '#c8a2ff' },
+  // Duree de chaque etape, en ms : verrou, rotation, ecartement, attente, fermeture.
+  timing: { unlock: 520, rotate: 820, slide: 760, hold: 1900, close: 940 }
+};
+
+DOOR.duration = DOOR.timing.unlock + DOOR.timing.rotate + DOOR.timing.slide
+              + DOOR.timing.hold + DOOR.timing.close;
+
+/** Instant, dans la sequence, ou les deux battants sont entierement ecartes. */
+DOOR.openedAt = DOOR.timing.unlock + DOOR.timing.rotate + DOOR.timing.slide;
+
 const COLS = Math.ceil(WIDTH / CELL);
 const ROWS = Math.ceil(HEIGHT / CELL);
 
@@ -215,12 +246,13 @@ function clientData() {
     lights: LIGHTS,
     flameSprite: FLAME_SPRITE,
     flames: FLAMES,
+    door: DOOR,
     grid: GRID.join('\n')
   };
 }
 
 module.exports = {
   IMAGE, WIDTH, HEIGHT, CELL, COLS, ROWS, FLOOR, SOLIDS, LIGHTS, SPAWNS, GRID,
-  FLAME_SPRITE, FLAMES,
+  FLAME_SPRITE, FLAMES, DOOR,
   solidAt, blocked, sweep, move, nearestFree, randomFree, clientData
 };

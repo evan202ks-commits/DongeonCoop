@@ -45,6 +45,7 @@ export class Net {
     s.on('chat:message', (msg) => this.onChat(msg));
     s.on('notice', (msg) => this.onEvent('notice', { msg }));
     s.on('auth:error', (msg) => this.onEvent('auth-error', { msg }));
+    s.on('door:open', (d) => this.onEvent('door', d));
     s.on('player:join', (p) => this.onEvent('join', p));
     s.on('player:leave', (p) => this.onEvent('leave', p));
     s.on('disconnect', () => this.onEvent('disconnect', {}));

@@ -23,6 +23,7 @@ let equipment = {};
 let catalog = null;             // { classes, slots, labels }
 let account = null;             // profil compte : progression de chaque classe
 let joined = false;
+let doorAt = 0;                 // horodatage serveur du dernier declenchement de la porte
 let mode = 'login';
 let lastFrame = performance.now();
 
@@ -175,6 +176,8 @@ net.onWelcome = (data) => {
 
   collision = new Collision(data.config.MAP);
   renderer = new Renderer(el('stage'), data.config, data.items, data.classes);
+  // Un joueur qui arrive pendant la sequence la reprend en cours de route.
+  doorAt = (data.door && data.door.at) || 0;
   renderer.centerOn(self.x, self.y);
 
   el('roomId').textContent = data.roomId;
@@ -221,6 +224,7 @@ net.onInventory = (data) => {
 };
 
 net.onEvent = (type, payload) => {
+  if (type === 'door') doorAt = payload.at;
   // Les arrivees et departs remontent deja par le canal Info du serveur.
   if (type === 'notice') log(payload.msg);
   if (type === 'disconnect') log('Connexion perdue — reconnexion…');
@@ -458,8 +462,12 @@ function loop(now) {
   const players = buildPlayerList(now);
   const items = net.latest ? net.latest.items || [] : [];
 
+  // La porte est animee sur l'horloge serveur : tout le monde la voit bouger
+  // au meme instant, quelle que soit sa latence.
+  const doorElapsed = doorAt ? Date.now() + net.clockOffset - doorAt : null;
+
   renderer.centerOn(self.x, self.y);
-  renderer.frame(players, items, net.id, now);
+  renderer.frame(players, items, net.id, now, doorElapsed);
   updateHud(players);
 }
 
