@@ -1,11 +1,12 @@
 const crypto = require('crypto');
 const CONFIG = require('./config');
+const DungeonMap = require('./map');
 const Inventory = require('./inventory');
 const Classes = require('./classes');
 const { ITEMS, randomType, isValidType, isDroppable } = require('./items');
 
 /**
- * Une salle = un terrain plat partage + les joueurs et le butin dessus.
+ * Une salle = la carte de donjon (server/map.js) + les joueurs et le butin dessus.
  * Le serveur est autoritatif : positions et inventaires vivent ici, le client predit.
  */
 class Room {
@@ -27,28 +28,27 @@ class Room {
     return this.players.size >= CONFIG.PLAYER.maxPerRoom;
   }
 
-  /** Point de depot des nouveaux comptes : repartition reguliere sur un anneau. */
+  /** Point de depot des nouveaux comptes : cases libres reparties dans la salle. */
   nextSpawn() {
-    const { width, height } = CONFIG.WORLD;
-    const { ringRadius, slots } = CONFIG.SPAWN;
-    const index = this.spawnCursor++ % slots;
-    const angle = (index / slots) * Math.PI * 2;
-    return {
-      x: width / 2 + Math.cos(angle) * ringRadius,
-      y: height / 2 + Math.sin(angle) * ringRadius,
-      angle: angle + Math.PI
-    };
+    const spots = DungeonMap.SPAWNS;
+    const spot = spots[this.spawnCursor++ % spots.length];
+    return { x: spot.x, y: spot.y, angle: spot.angle };
   }
 
   /**
    * Ajoute un joueur a partir de son profil de compte.
-   * Position sauvegardee si le compte en a une, sinon depot sur l'anneau.
+   * Position sauvegardee si le compte en a une, sinon depot sur un point de la salle.
    */
   add(socketId, profile) {
     const saved = profile.position;
-    const spawn = saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)
+    let spawn = saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)
       ? { x: saved.x, y: saved.y, angle: saved.angle || 0 }
       : this.nextSpawn();
+
+    // Une position d'avant la salle (ou modifiee depuis) peut tomber dans un mur :
+    // on repose le personnage sur la case libre la plus proche au lieu de l'y enfermer.
+    const free = DungeonMap.nearestFree(spawn.x, spawn.y, CONFIG.PLAYER.radius);
+    spawn = { x: free.x, y: free.y, angle: spawn.angle };
 
     const classId = Classes.isValidClass(profile.classId) ? profile.classId : Classes.CLASS_IDS[0];
     const equipment = Classes.sanitizeEquipment(classId, profile.equipment);
@@ -130,32 +130,36 @@ class Room {
     if (len > 1) { ax /= len; ay /= len; }
 
     const speed = (player.attrs && player.attrs.speed) || CONFIG.PLAYER.speed;
-    player.x += ax * speed * cmd.dt;
-    player.y += ay * speed * cmd.dt;
+    // Murs et mobilier de la salle : deplacement axe par axe, on glisse le long
+    // des obstacles au lieu de s'y coller net.
+    DungeonMap.move(player, ax * speed * cmd.dt, ay * speed * cmd.dt, CONFIG.PLAYER.radius);
     player.dx = ax;
     player.dy = ay;
     if (len > 0.01) player.angle = Math.atan2(ay, ax);
-
-    Room.clampToWorld(player);
   }
 
-  static clampToWorld(entity) {
-    const r = CONFIG.PLAYER.radius;
+  /** Repousse une entite hors des murs (utilise apres une separation de joueurs). */
+  static clampToWorld(entity, radius = CONFIG.PLAYER.radius) {
     const { width, height } = CONFIG.WORLD;
-    entity.x = Math.max(r, Math.min(width - r, entity.x));
-    entity.y = Math.max(r, Math.min(height - r, entity.y));
+    entity.x = Math.max(radius, Math.min(width - radius, entity.x));
+    entity.y = Math.max(radius, Math.min(height - radius, entity.y));
+    if (DungeonMap.blocked(entity.x, entity.y, radius)) {
+      const free = DungeonMap.nearestFree(entity.x, entity.y, radius);
+      entity.x = free.x;
+      entity.y = free.y;
+    }
   }
 
   // --- Butin ------------------------------------------------------------
   spawnLoot() {
-    const { width, height } = CONFIG.WORLD;
-    const margin = 60;
+    // Le butin tombe sur la dalle, jamais dans un mur ni sous un autel.
+    const spot = DungeonMap.randomFree(24);
     const item = {
       id: crypto.randomBytes(6).toString('hex'),
       type: randomType(),
       qty: 1,
-      x: margin + Math.random() * (width - margin * 2),
-      y: margin + Math.random() * (height - margin * 2),
+      x: spot.x,
+      y: spot.y,
       pickupAfter: 0
     };
     this.ground.set(item.id, item);
@@ -179,15 +183,19 @@ class Room {
     const type = player.inventory.removeOne(index);
     if (!type) return null;
 
+    // Devant le joueur si c'est degage, a ses pieds sinon : un objet jete ne
+    // doit jamais finir de l'autre cote d'un mur.
+    const ahead = { x: player.x + Math.cos(player.angle) * 34, y: player.y + Math.sin(player.angle) * 34 };
+    const spot = DungeonMap.blocked(ahead.x, ahead.y, 12) ? { x: player.x, y: player.y } : ahead;
+
     const item = {
       id: crypto.randomBytes(6).toString('hex'),
       type,
       qty: 1,
-      x: player.x + Math.cos(player.angle) * 34,
-      y: player.y + Math.sin(player.angle) * 34,
+      x: spot.x,
+      y: spot.y,
       pickupAfter: Date.now() + CONFIG.INVENTORY.dropCooldownMs
     };
-    Room.clampToWorld(item);
     this.ground.set(item.id, item);
 
     this.events.push({ type: 'inventory', playerId: socketId });

@@ -151,7 +151,7 @@ class Accounts {
     }
 
     const state = {
-      position: null,                    // null = depot sur l'anneau de spawn
+      position: null,                    // null = depot sur un point de la salle
       inventory: new Array(CONFIG.INVENTORY.slots).fill(null),
       equipment: Classes.emptyEquipment(),
       stats: emptyStats(),

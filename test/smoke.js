@@ -6,6 +6,7 @@
 const { io } = require('socket.io-client');
 const CONFIG = require('../server/config');
 const Classes = require('../server/classes');
+const DungeonMap = require('../server/map');
 
 const PORT = process.env.PORT || 3000;
 const URL = `http://localhost:${PORT}`;
@@ -67,6 +68,26 @@ function push(client, ax, ay, ms) {
     client.socket.emit('input', { seq: ++client.seq, dt: 1 / 30, ax, ay });
   }, 33);
   return wait(ms).then(() => { clearInterval(timer); return wait(200); });
+}
+
+/** Un point de depot de la salle correspond-il a cette position ? */
+const isSpawnPoint = (p) => DungeonMap.SPAWNS.some(s => Math.hypot(s.x - p.x, s.y - p.y) < 1);
+
+/**
+ * Direction cardinale degagee sur `distance` px depuis `from`.
+ * La salle a des murs et du mobilier : pousser toujours vers la droite
+ * finirait tot ou tard contre un autel, et le test mesurerait un mur.
+ */
+function freeDirection(from, distance) {
+  const r = CONFIG.PLAYER.radius + 2;
+  for (const [ax, ay] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+    let clear = true;
+    for (let t = 8; t <= distance && clear; t += 8) {
+      if (DungeonMap.blocked(from.x + ax * t, from.y + ay * t, r)) clear = false;
+    }
+    if (clear) return { ax, ay };
+  }
+  return { ax: 1, ay: 0 };
 }
 
 const filled = (inv) => inv.filter(Boolean).length;
@@ -149,9 +170,10 @@ async function walkToLoot(client, wanted = 1, tries = 80) {
 
   // --- Premiere partie en Mage ---
   const a = await play(token, 'mage');
-  const cx = CONFIG.WORLD.width / 2, cy = CONFIG.WORLD.height / 2;
-  check('nouveau personnage depose sur l anneau',
-    Math.abs(Math.hypot(a.spawn.x - cx, a.spawn.y - cy) - CONFIG.SPAWN.ringRadius) < 1);
+  check('nouveau personnage depose sur un point de la salle', isSpawnPoint(a.spawn),
+    `${a.spawn.x}, ${a.spawn.y}`);
+  check('point de depot en dehors des murs',
+    !DungeonMap.blocked(a.spawn.x, a.spawn.y, CONFIG.PLAYER.radius));
 
   const mageArts = Classes.artifactsOf('mage').map(x => x.id);
   check('les 3 artefacts du Mage sont dans son sac',
@@ -169,9 +191,24 @@ async function walkToLoot(client, wanted = 1, tries = 80) {
 
   await wait(CONFIG.SPAWN.dropMs);
   const from = { x: a.last.x, y: a.last.y };
-  await push(a, 1, 0, 1000);
+  const way = freeDirection(from, a.attrs.speed);
+  await push(a, way.ax, way.ay, 1000);
   const dist = Math.hypot(a.last.x - from.x, a.last.y - from.y);
   check('deplacement a la vitesse de la classe', dist > a.attrs.speed * 0.7, `${dist.toFixed(0)}px`);
+
+  // --- Murs de la salle ---
+  const inside = !DungeonMap.blocked(a.last.x, a.last.y, CONFIG.PLAYER.radius);
+  check('le joueur reste sur une case libre', inside, `${a.last.x.toFixed(0)}, ${a.last.y.toFixed(0)}`);
+
+  const wallFrom = { x: a.last.x, y: a.last.y };
+  for (const [ax, ay] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) await push(a, ax, ay, 1200);
+  check('les murs et le mobilier arretent le joueur',
+    !DungeonMap.blocked(a.last.x, a.last.y, CONFIG.PLAYER.radius) &&
+    a.last.x > 0 && a.last.x < CONFIG.WORLD.width && a.last.y > 0 && a.last.y < CONFIG.WORLD.height,
+    `parti de ${wallFrom.x.toFixed(0)},${wallFrom.y.toFixed(0)} — arrive a ${a.last.x.toFixed(0)},${a.last.y.toFixed(0)}`);
+  check('le butin tombe toujours sur la dalle',
+    (a.items || []).every(it => !DungeonMap.blocked(it.x, it.y, 12)),
+    `${(a.items || []).length} objet(s) au sol`);
 
   // --- Artefacts : equiper / deseequiper ---
   const orbe = 'orbe_mana';                       // relique du Mage : +10 % de vitesse
@@ -184,7 +221,8 @@ async function walkToLoot(client, wanted = 1, tries = 80) {
     `${speedBefore} -> ${a.attrs.speed} px/s`);
 
   const boosted = { x: a.last.x, y: a.last.y };
-  await push(a, 0, 1, 1000);
+  const boostWay = freeDirection(boosted, a.attrs.speed);
+  await push(a, boostWay.ax, boostWay.ay, 1000);
   const boostedDist = Math.hypot(a.last.x - boosted.x, a.last.y - boosted.y);
   check('la vitesse boostee est bien autoritative', boostedDist > speedBefore * 0.95,
     `${boostedDist.toFixed(0)}px pour ${dist.toFixed(0)}px sans artefact`);
@@ -251,8 +289,8 @@ async function walkToLoot(client, wanted = 1, tries = 80) {
   check('inventaire du Voleur independant de celui du Mage',
     !types(v.inventory).some(t => mageArts.includes(t)) && lootOnly(v.inventory).length === 0);
   check('equipement du Voleur vierge', cat.slots.every(s => v.equipment[s] === null));
-  check('le Voleur depose sur l anneau (personnage neuf)',
-    Math.abs(Math.hypot(v.spawn.x - cx, v.spawn.y - cy) - CONFIG.SPAWN.ringRadius) < 1);
+  check('le Voleur depose sur un point de la salle (personnage neuf)',
+    isSpawnPoint(v.spawn), `${v.spawn.x}, ${v.spawn.y}`);
   check('vitesse propre au Voleur', v.attrs.speed === Classes.CLASSES.voleur.base.speed,
     `${v.attrs.speed} px/s contre ${Classes.CLASSES.mage.base.speed} au Mage`);
   check('classe diffusee aux autres joueurs', v.welcome.snapshot.players.some(p => p.k === 'voleur'));
@@ -277,9 +315,12 @@ async function walkToLoot(client, wanted = 1, tries = 80) {
   const other = await api('/api/register', { username: `Autre${suffix}`, password: 'motdepasse' });
   const d = await play(other.data.token, 'barbare');
   await wait(CONFIG.SPAWN.dropMs + 200);
-  await push(d, 1, 0, 300);
+  const cheatWay = freeDirection(d.last, d.attrs.speed * 2);
+  await push(d, cheatWay.ax, cheatWay.ay, 300);
   const before = { x: d.last.x, y: d.last.y };
-  for (let i = 0; i < 200; i++) d.socket.emit('input', { seq: ++d.seq, dt: 5, ax: 1, ay: 0 });
+  for (let i = 0; i < 200; i++) {
+    d.socket.emit('input', { seq: ++d.seq, dt: 5, ax: cheatWay.ax, ay: cheatWay.ay });
+  }
   await wait(500);
   const cheat = Math.hypot(d.last.x - before.x, d.last.y - before.y);
   const legitMax = d.attrs.speed * 1.5;
@@ -294,21 +335,37 @@ async function walkToLoot(client, wanted = 1, tries = 80) {
   const p2 = await play(seller.data.token, 'barbare');
   await wait(CONFIG.SPAWN.dropMs + 200);
 
-  /** Rapproche un joueur d'un point pour passer sous la portee de demande d'echange. */
-  async function walkTo(client, tx, ty, tries = 60) {
+  /**
+   * Rapproche un joueur d'un point pour passer sous la portee de demande d'echange.
+   * La salle a des autels et des jarres : quand la ligne droite ne progresse plus,
+   * on longe l'obstacle perpendiculairement avant de repartir vers la cible.
+   */
+  async function walkTo(client, tx, ty, tries = 90) {
+    let best = Infinity, stuck = 0;
     for (let i = 0; i < tries; i++) {
       const dx = tx - client.last.x, dy = ty - client.last.y;
       const dist = Math.hypot(dx, dy);
-      if (dist < 40) break;
-      await push(client, dx / dist, dy / dist, 150);
+      if (dist < 40) return true;
+      if (dist < best - 4) { best = dist; stuck = 0; } else stuck++;
+
+      const side = stuck > 0 ? (Math.floor(stuck / 3) % 2 ? -1 : 1) : 0;
+      const ax = side ? (-dy / dist) * side : dx / dist;
+      const ay = side ? (dx / dist) * side : dy / dist;
+      await push(client, ax, ay, 150);
     }
+    return Math.hypot(tx - client.last.x, ty - client.last.y) < 40;
   }
-  await walkTo(p1, p2.last.x, p2.last.y);
 
   await walkToLoot(p2, 1);
   const lootType = (lootOnly(p2.inventory)[0] || {}).type;
   check('le vendeur a du butin a offrir', !!lootType, JSON.stringify(p2.inventory));
   const sellerBefore = p2.inventory.filter(s => s && s.type === lootType).reduce((n, s) => n + s.qty, 0);
+
+  // Le vendeur a couru apres son butin : l'acheteur va le rejoindre maintenant
+  // qu'il ne bouge plus, en contournant ce qui se trouve entre eux.
+  const joined = await walkTo(p1, p2.last.x, p2.last.y);
+  check('l acheteur rejoint le vendeur en contournant le mobilier', joined,
+    `${Math.hypot(p1.last.x - p2.last.x, p1.last.y - p2.last.y).toFixed(0)}px`);
 
   p1.socket.emit('trade:request', p2.socket.id);
   await wait(300);

@@ -1,4 +1,4 @@
-// Rendu 2D vue de dessus : terrain plat, plots de depot, joueurs.
+// Rendu 2D vue de dessus : salle de donjon (image de fond), butin, joueurs.
 export class Renderer {
   constructor(canvas, config, items = {}, classes = {}) {
     this.canvas = canvas;
@@ -9,6 +9,16 @@ export class Renderer {
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.camera = { x: 0, y: 0 };
     this.iconCache = new Map(); // src -> { img, ready }
+    this.map = config.MAP;
+    this.debug = false;         // F2 : superpose la grille de collision
+
+    // Image de la salle : elle sert de sol, de murs et de decor. Tant qu'elle
+    // n'est pas chargee, on peint un aplat sombre pour eviter le flash blanc.
+    this.room = new Image();
+    this.roomReady = false;
+    this.room.onload = () => { this.roomReady = true; };
+    this.room.src = this.map.image;
+
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -50,73 +60,78 @@ export class Renderer {
     ctx.translate(-this.camera.x, -this.camera.y);
 
     this.drawGround();
-    this.drawSpawnPads();
     for (const item of items) this.drawItem(item, now);
 
     // Tri par Y : les joueurs plus bas passent devant.
     const sorted = [...players].sort((a, b) => a.y - b.y);
     for (const p of sorted) this.drawPlayer(p, p.id === selfId, now);
 
+    this.drawLights(now);
+    if (this.debug) this.drawCollision();
+
     ctx.restore();
   }
 
   drawGround() {
     const ctx = this.ctx;
-    const { width, height, tile } = this.config.WORLD;
-    const cam = this.camera, view = this.view;
+    const { width, height } = this.config.WORLD;
 
-    // Sol de base
-    ctx.fillStyle = '#131c2e';
+    ctx.fillStyle = '#453849';              // teinte du pourtour de la salle
     ctx.fillRect(0, 0, width, height);
 
-    // Damier discret, limite aux tuiles visibles
-    const x0 = Math.max(0, Math.floor(cam.x / tile));
-    const y0 = Math.max(0, Math.floor(cam.y / tile));
-    const x1 = Math.min(width / tile, Math.ceil((cam.x + view.w) / tile));
-    const y1 = Math.min(height / tile, Math.ceil((cam.y + view.h) / tile));
+    if (this.roomReady) {
+      ctx.imageSmoothingEnabled = false;    // pixel art : aucun lissage
+      ctx.drawImage(this.room, 0, 0, width, height);
+      ctx.imageSmoothingEnabled = true;
+    }
+  }
 
-    for (let ty = y0; ty < y1; ty++) {
-      for (let tx = x0; tx < x1; tx++) {
-        if ((tx + ty) % 2 === 0) continue;
-        ctx.fillStyle = 'rgba(255,255,255,0.014)';
-        ctx.fillRect(tx * tile, ty * tile, tile, tile);
+  /** Brasiers et torches : halos qui respirent par-dessus l'image fixe. */
+  drawLights(now) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (const light of this.map.lights) {
+      const phase = light.x * 0.013 + light.y * 0.021;
+      const pulse = 0.72 + Math.sin(now / 420 + phase) * 0.12 + Math.sin(now / 137 + phase) * 0.05;
+      const radius = light.r * pulse;
+      const grad = ctx.createRadialGradient(light.x, light.y, 0, light.x, light.y, radius);
+      grad.addColorStop(0, `${light.color}44`);
+      grad.addColorStop(0.45, `${light.color}18`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(light.x, light.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  /** F2 : grille de collision telle que le serveur la voit. */
+  drawCollision() {
+    const ctx = this.ctx;
+    const { cell, cols, rows, grid } = this.map;
+    const lines = this._gridLines || (this._gridLines = grid.split('\n'));
+
+    const c0 = Math.max(0, Math.floor(this.camera.x / cell));
+    const r0 = Math.max(0, Math.floor(this.camera.y / cell));
+    const c1 = Math.min(cols, Math.ceil((this.camera.x + this.view.w) / cell));
+    const r1 = Math.min(rows, Math.ceil((this.camera.y + this.view.h) / cell));
+
+    ctx.fillStyle = 'rgba(248,113,113,0.32)';
+    for (let row = r0; row < r1; row++) {
+      const line = lines[row];
+      for (let col = c0; col < c1; col++) {
+        if (line.charCodeAt(col) === 49) ctx.fillRect(col * cell, row * cell, cell, cell);
       }
     }
 
-    // Lignes de dalles
-    ctx.strokeStyle = 'rgba(148,163,184,0.06)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let tx = x0; tx <= x1; tx++) { ctx.moveTo(tx * tile, y0 * tile); ctx.lineTo(tx * tile, y1 * tile); }
-    for (let ty = y0; ty <= y1; ty++) { ctx.moveTo(x0 * tile, ty * tile); ctx.lineTo(x1 * tile, ty * tile); }
-    ctx.stroke();
-
-    // Bordure du terrain
-    ctx.strokeStyle = 'rgba(56,189,248,0.35)';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(2, 2, width - 4, height - 4);
-  }
-
-  drawSpawnPads() {
-    const ctx = this.ctx;
-    const { width, height } = this.config.WORLD;
-    const { ringRadius, slots } = this.config.SPAWN;
-
-    ctx.strokeStyle = 'rgba(74,222,128,0.12)';
+    ctx.strokeStyle = 'rgba(56,189,248,0.5)';
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(width / 2, height / 2, ringRadius, 0, Math.PI * 2);
-    ctx.stroke();
-
-    for (let i = 0; i < slots; i++) {
-      const angle = (i / slots) * Math.PI * 2;
-      const x = width / 2 + Math.cos(angle) * ringRadius;
-      const y = height / 2 + Math.sin(angle) * ringRadius;
-      ctx.strokeStyle = 'rgba(74,222,128,0.22)';
-      ctx.beginPath();
-      ctx.arc(x, y, 22, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+    const f = this.map.floor;
+    ctx.strokeRect(f.x0, f.y0, f.x1 - f.x0, f.y1 - f.y0);
   }
 
   /** Objet au sol : icone (ou losange colore a defaut), animation de flottement pour attirer l'oeil. */

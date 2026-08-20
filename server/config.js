@@ -1,14 +1,20 @@
 // Configuration partagee : le serveur l'envoie au client a la connexion,
 // pour eviter d'avoir deux sources de verite qui divergent.
+const MapData = require('./map');
+
 const CONFIG = {
   TICK_HZ: 30,          // pas de simulation serveur
   SNAPSHOT_HZ: 20,      // frequence d'envoi de l'etat aux clients
 
   WORLD: {
-    width: 1920,        // terrain plat, sans relief ni obstacle
-    height: 1920,
-    tile: 64
+    width: MapData.WIDTH,   // le monde fait exactement la taille de l'image de la salle
+    height: MapData.HEIGHT, // 1 unite monde = 1 pixel de salle-donjon.png
+    tile: MapData.CELL
   },
+
+  // Salle de donjon : image de fond, grille de collision, lumieres, depots.
+  // Tout se regle dans server/map.js.
+  MAP: MapData.clientData(),
 
   PLAYER: {
     radius: 18,
@@ -17,9 +23,8 @@ const CONFIG = {
   },
 
   SPAWN: {
-    ringRadius: 280,    // depot des nouveaux comptes, en cercle autour du centre
-    slots: 16,
-    dropMs: 700         // duree de la chute avant de toucher le sol
+    points: MapData.SPAWNS.length, // depots repartis dans la salle (server/map.js)
+    dropMs: 700                    // duree de la chute avant de toucher le sol
   },
 
   INVENTORY: {

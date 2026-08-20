@@ -2,10 +2,12 @@ import { Auth } from './auth.js';
 import { Net } from './net.js';
 import { Input } from './input.js';
 import { Renderer } from './render.js';
+import { Collision } from './collision.js';
 
 const net = new Net();
 const input = new Input();
 let renderer = null;
+let collision = null;          // grille de collision de la salle (recue avec la config)
 
 const INPUT_STEP = 1 / 30;      // 30 commandes / seconde envoyees au serveur
 let inputAcc = 0;
@@ -36,13 +38,20 @@ function applyInput(entity, cmd, config) {
 
   // La vitesse depend de la classe et des artefacts equipes, pas de CONFIG.
   const speed = entity.speed || config.PLAYER.speed;
-  entity.x += ax * speed * cmd.dt;
-  entity.y += ay * speed * cmd.dt;
-  if (len > 0.01) entity.angle = Math.atan2(ay, ax);
-
   const r = config.PLAYER.radius;
-  entity.x = Math.max(r, Math.min(config.WORLD.width - r, entity.x));
-  entity.y = Math.max(r, Math.min(config.WORLD.height - r, entity.y));
+
+  if (collision) {
+    // Memes murs que le serveur : sans ca, la prediction traverse le mobilier
+    // puis se fait ramener en arriere a chaque snapshot.
+    collision.move(entity, ax * speed * cmd.dt, ay * speed * cmd.dt, r);
+  } else {
+    entity.x += ax * speed * cmd.dt;
+    entity.y += ay * speed * cmd.dt;
+    entity.x = Math.max(r, Math.min(config.WORLD.width - r, entity.x));
+    entity.y = Math.max(r, Math.min(config.WORLD.height - r, entity.y));
+  }
+
+  if (len > 0.01) entity.angle = Math.atan2(ay, ax);
 }
 
 // --- Ecran de connexion ------------------------------------------------
@@ -162,6 +171,7 @@ net.onWelcome = (data) => {
   catalog = catalog || { classes: data.classes, slots: data.equipSlots, labels: data.slotLabels };
   dropStarts.set(data.id, performance.now());
 
+  collision = new Collision(data.config.MAP);
   renderer = new Renderer(el('stage'), data.config, data.items, data.classes);
   renderer.centerOn(self.x, self.y);
 
@@ -566,6 +576,15 @@ for (const id of ['username', 'password']) {
   el(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 }
 // Derniere sauvegarde avant fermeture de l'onglet.
+// F2 : affiche la grille de collision de la salle, pratique pour caler un
+// obstacle apres avoir touche a server/map.js.
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'F2' || !renderer) return;
+  e.preventDefault();
+  renderer.debug = !renderer.debug;
+  log(renderer.debug ? 'Collisions affichées (F2).' : 'Collisions masquées.');
+});
+
 window.addEventListener('beforeunload', () => net.requestSave());
 
 // --- Echanges entre comptes ---

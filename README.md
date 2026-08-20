@@ -1,6 +1,6 @@
 # DongeonCoop — multijoueur temps réel avec comptes et classes
 
-Terrain plat partagé. On se connecte à son compte, **on choisit sa classe à chaque connexion** (Mage, Barbare, Archer, Voleur), et on reprend ce personnage exactement où il s'était arrêté : sa position, son inventaire, ses artefacts équipés et ses statistiques lui appartiennent en propre.
+**Une salle de donjon partagée**, murs et mobilier compris. On se connecte à son compte, **on choisit sa classe à chaque connexion** (Mage, Barbare, Archer, Voleur), et on reprend ce personnage exactement où il s'était arrêté : sa position, son inventaire, ses artefacts équipés et ses statistiques lui appartiennent en propre.
 
 ## Lancer
 
@@ -15,19 +15,38 @@ npm test           # tests de fumée (serveur déjà lancé)
 ```
 server.js               Express + Socket.IO, API comptes, boucles de simulation, autosave
 server/config.js        Constantes partagées (envoyées au client à la connexion)
+server/map.js           La salle : géométrie, obstacles, grille de collision, points de dépôt
 server/accounts.js      Comptes : inscription, connexion, jetons, profils persistés
 server/store.js         Stockage JSON sur disque (écriture atomique et différée)
 server/inventory.js     Inventaire autoritatif : cases, empilage, ajout/retrait
 server/classes.js       Les 4 classes, leurs artefacts, calcul des stats effectives
 server/items.js         Catalogue d'objets (butin + artefacts) et tirage pondéré
-server/Room.js          Salle : joueurs, butin au sol, simulation, snapshots
+server/Room.js          Instance de salle : joueurs, butin au sol, simulation, snapshots
 server/RoomManager.js   Répartition des joueurs, création de salles au-delà de 16
 public/js/auth.js       Inscription/connexion, jeton en localStorage, reprise de session
 public/js/net.js        Socket, buffer de snapshots, horloge serveur, latence
 public/js/input.js      Clavier ZQSD/WASD/flèches + joystick tactile
-public/js/render.js     Rendu canvas : sol, plots de dépôt, butin, joueurs
+public/js/collision.js  Copie client du solveur de collisions (prédiction identique au serveur)
+public/js/render.js     Rendu canvas : image de la salle, halos des brasiers, butin, joueurs
+public/map/             salle-donjon.png (la carte) + fiche-assets.png (planche de référence)
 public/js/main.js       Choix de classe, boucle client : prédiction, réconciliation, inventaire, équipement
 ```
+
+## La salle
+
+`public/map/salle-donjon.png` **est** la carte : le monde fait exactement la taille de l'image (1672 × 941), donc une coordonnée monde vaut un pixel de l'image. Le rendu est en `imageSmoothingEnabled = false` — du pixel art, pas du flou.
+
+**Collisions.** `server/map.js` liste les obstacles en rectangles relevés sur l'image (enceinte, renfoncements latéraux murés, torches murales, les quatre autels, jarres, caisses, baril, rocher), puis les rasterise en une grille de cases de 16 px. Une case est solide si son centre tombe dans un obstacle. Le reste — os, mousses, grille d'égout, banderoles — est du décor peint au sol : on marche dessus.
+
+Le déplacement se fait **axe par axe**, avec recherche dichotomique de la plus grande fraction libre : on glisse le long d'un mur au lieu de s'y coller à dix pixels, et un mouvement en diagonale contre une paroi continue le long de celle-ci.
+
+**Une seule source de vérité.** La grille part au client dans `CONFIG.MAP` et `public/js/collision.js` rejoue exactement le même solveur : la prédiction locale heurte les mêmes murs que le serveur, sinon la réconciliation passerait son temps à corriger le joueur contre le mobilier. Les deux fichiers doivent rester synchronisés.
+
+**Ajuster un obstacle.** Lire les coordonnées sur l'image, corriger le rectangle dans `SOLIDS`, relancer. **F2 en jeu** superpose la grille telle que le serveur la voit — c'est le moyen le plus rapide de vérifier qu'un autel ou une jarre est bien calé.
+
+**Points de dépôt.** Seize positions réparties sur la croix centrale et dans les quatre quartiers, recalées automatiquement sur une case libre au chargement : une valeur approximative dans `SPAWNS` suffit. Une position sauvegardée qui tomberait dans un mur (compte d'avant la salle, obstacle déplacé depuis) est repoussée sur la case libre la plus proche — personne ne se réveille enfermé dans la pierre.
+
+**Vivant.** Les neuf sources lumineuses (quatre brasiers, appliques du porche, torches murales, sceau central) respirent par-dessus l'image fixe côté client. Rien de tout ça n'est simulé : c'est du rendu pur, gratuit pour le serveur.
 
 ## Classes et artefacts
 
@@ -80,7 +99,7 @@ Définir aussi `SESSION_SECRET` en production, sinon un secret est généré et 
 
 ## Butin et inventaire
 
-Des objets apparaissent sur le terrain (un toutes les 4 s, 16 maximum). On les ramasse en marchant dessus — la portée dépend de la classe et des artefacts équipés ; un clic sur une case de l'inventaire en jette un au sol, non reprenable pendant 800 ms. Un clic sur un artefact l'équipe au lieu de le jeter. Le catalogue de butin est dans `server/items.js` (`LOOT`) : ajouter une entrée suffit, le loot et le rendu client suivent.
+Des objets apparaissent sur la dalle (un toutes les 4 s, 16 maximum) — jamais dans un mur ni sous un autel, et un objet jeté devant soi retombe aux pieds du joueur si le passage est bouché. On les ramasse en marchant dessus — la portée dépend de la classe et des artefacts équipés ; un clic sur une case de l'inventaire en jette un au sol, non reprenable pendant 800 ms. Un clic sur un artefact l'équipe au lieu de le jeter. Le catalogue de butin est dans `server/items.js` (`LOOT`) : ajouter une entrée suffit, le loot et le rendu client suivent.
 
 ## Modèle réseau
 
@@ -95,7 +114,7 @@ Le serveur est **autoritatif** : il possède positions et inventaires, le client
 ### Garde-fous serveur
 
 - `dt` borné à 50 ms par commande, plus un budget de temps global (1,15× le temps réel écoulé) : impossible d'accélérer en spammant.
-- Positions bornées au terrain, séparation douce des joueurs qui se chevauchent.
+- Positions bornées à la salle et testées contre la grille de collision, séparation douce des joueurs qui se chevauchent.
 - Entrées ignorées pendant la chute (700 ms après le dépôt).
 - Inventaire et équipement modifiés uniquement par le serveur : le client demande, il ne décide pas.
 - Classe validée à l'entrée en jeu ; un artefact refusé si ce n'est pas celui de la classe ou pas le bon emplacement.
@@ -120,10 +139,10 @@ Tout est dans `server/config.js` — le client reçoit ces valeurs à la connexi
 
 | Réglage | Effet |
 |---|---|
-| `WORLD.width / height` | Taille du terrain plat |
+| `WORLD.width / height` | Taille de la salle — dérivée de l'image, à ne pas modifier à la main |
 | `PLAYER.speed` | Vitesse de repli (les classes définissent la leur dans `classes.js`) |
 | `PLAYER.maxPerRoom` | Joueurs par salle avant ouverture d'une nouvelle |
-| `SPAWN.ringRadius / slots` | Rayon et nombre de points de dépôt des nouveaux comptes |
+| `SPAWN.points` | Nombre de points de dépôt (la liste elle-même est dans `server/map.js`) |
 | `SPAWN.dropMs` | Durée de la chute à l'arrivée |
 | `INVENTORY.slots / maxStack` | Taille de l'inventaire et des piles (par classe) |
 | `LOOT.maxOnGround / spawnEveryMs` | Densité et cadence du butin |
@@ -132,6 +151,8 @@ Tout est dans `server/config.js` — le client reçoit ces valeurs à la connexi
 
 ## Étape suivante
 
-La base est prête pour le contenu donjon : ajouter les murs/salles dans `Room` (grille de collision côté serveur, dessinée dans `render.js`), puis les monstres comme entités simulées dans `Room.step()` et diffusées dans le même snapshot.
+Les murs sont là. Le prochain morceau, ce sont **les monstres** : des entités simulées dans `Room.step()` et diffusées dans le même snapshot que les joueurs — la grille de collision de `server/map.js` leur sert telle quelle, et `nearestFree` donne déjà des points d'apparition valides.
+
+Ensuite, **plusieurs salles** : `server/map.js` expose une salle unique, mais rien dans `Room` ne suppose qu'il n'y en a qu'une. Une carte par fichier, un identifiant de carte sur le joueur, et les renfoncements latéraux murés deviennent de vraies portes.
 
 Côté classes, tout est déjà branché pour aller plus loin : des sorts par classe (un `cooldown` par artefact équipé et un événement diffusé dans le snapshot), des artefacts rares qui se lootent au sol (retirer le filtre `artifact` de `randomType`), ou des niveaux par personnage (les stats sont déjà stockées par classe).

@@ -3,8 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>DongeonCoop — terrain partagé</title>
+<title>DongeonCoop — salle de donjon partagée</title>
 <link rel="stylesheet" href="/style.css">
+<!-- La salle est le sol du jeu : on la charge avant tout le reste. -->
+<link rel="preload" as="image" href="/map/salle-donjon.png">
 </head>
 <body>
 
@@ -25,7 +27,7 @@
 <div class="hud">
   <div class="hud-row">
     <div class="panel">
-      <h2>Terrain</h2>
+      <h2>Salle</h2>
       <div class="stat">Salle <b id="roomId">—</b></div>
       <div class="stat">Joueurs <b id="playerCount">0</b></div>
       <div class="stat">Latence <b id="ping">—</b> ms</div>
@@ -109,7 +111,7 @@
     <button class="action" id="submitBtn">Se connecter</button>
 
     <div class="note">Déplacements : ZQSD / WASD / flèches — joystick tactile sur mobile.<br>
-      Marche sur un objet pour le ramasser.</div>
+      Marche sur un objet pour le ramasser. Murs, autels et jarres bloquent le passage.</div>
     <button class="link" id="logoutBtn" hidden type="button">Changer de compte</button>
   </div>
 </div>
