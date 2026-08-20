@@ -1,7 +1,7 @@
 {
   "name": "dongeon-coop",
-  "version": "1.4.0",
-  "description": "Jeu coop en ligne : salle de donjon partagee en multijoueur temps reel (collisions serveur autoritatives), avec comptes, choix de classe a chaque connexion (Mage/Barbare/Archer/Voleur), artefacts equipables, inventaire par classe et echanges (Express + Socket.IO)",
+  "version": "1.5.0",
+  "description": "Jeu coop en ligne : salle de donjon partagee aux feux animes en multijoueur temps reel (collisions serveur autoritatives), avec comptes, choix de classe a chaque connexion (Mage/Barbare/Archer/Voleur), artefacts equipables, inventaire par classe et echanges (Express + Socket.IO)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

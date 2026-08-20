@@ -55,19 +55,43 @@ const SOLIDS = [
 ];
 
 /**
- * Sources lumineuses : le client les fait respirer par-dessus l'image fixe,
- * c'est ce qui donne l'impression que la salle est vivante.
+ * Les huit feux de la salle.
+ *
+ * Les flammes ne sont plus peintes dans salle-donjon.png : elles en ont ete
+ * effacees, et c'est le client qui les rejoue image par image depuis
+ * flamme.png. `x, y` designent le creux de la vasque — la flamme est dessinee
+ * centree dessus et montante, c'est le seul point a corriger si un brasero
+ * bouge. `scale` adapte la taille au support, `phase` decale le depart de la
+ * boucle et `rate` fait battre chaque feu a son propre rythme : sans ca les
+ * huit flammes vacilleraient a l'unisson, ce qui trahit tout de suite la
+ * boucle. `glow` est le halo projete au sol, il suit l'ampleur de l'image en
+ * cours.
  */
+const FLAME_SPRITE = {
+  image: '/map/flamme.png',
+  frames: 8,
+  width: 68,        // taille d'une image dans la planche
+  height: 95,
+  frameMs: 110,     // ~9 images par seconde : assez lent pour rester lisible
+  // Ampleur de chaque image de la boucle, de la braise basse a la grande
+  // langue de feu. Le halo s'y accroche pour respirer avec la flamme.
+  intensity: [0.55, 0.68, 0.85, 0.95, 1, 0.88, 0.7, 0.58]
+};
+
+const FLAMES = [
+  { x: 620, y: 331, scale: 0.80, phase: 0, rate: 1.00, glow: 150, color: '#a97bff' },
+  { x: 1047, y: 331, scale: 0.80, phase: 3, rate: 0.92, glow: 150, color: '#a97bff' },
+  { x: 622, y: 577, scale: 0.80, phase: 5, rate: 1.07, glow: 150, color: '#a97bff' },
+  { x: 1046, y: 577, scale: 0.80, phase: 2, rate: 0.97, glow: 150, color: '#a97bff' },
+  { x: 653, y: 130, scale: 0.62, phase: 6, rate: 1.11, glow: 115, color: '#b08cff' },
+  { x: 1018, y: 129, scale: 0.62, phase: 1, rate: 0.89, glow: 115, color: '#b08cff' },
+  { x: 276, y: 266, scale: 0.58, phase: 4, rate: 1.04, glow: 100, color: '#b08cff' },
+  { x: 1393, y: 267, scale: 0.58, phase: 7, rate: 0.95, glow: 100, color: '#b08cff' }
+];
+
+/** Halos sans flamme : ici le sceau grave au centre de la salle. */
 const LIGHTS = [
-  { x: 620, y: 309, r: 140, color: '#7cd9ff' },   // brasier haut gauche
-  { x: 1047, y: 308, r: 140, color: '#7cd9ff' },  // brasier haut droite
-  { x: 622, y: 555, r: 140, color: '#7cd9ff' },   // brasier bas gauche
-  { x: 1046, y: 555, r: 140, color: '#7cd9ff' },  // brasier bas droite
-  { x: 653, y: 112, r: 110, color: '#8ad4ff' },   // applique du porche, gauche
-  { x: 1018, y: 110, r: 110, color: '#8ad4ff' },  // applique du porche, droite
-  { x: 276, y: 254, r: 100, color: '#8ad4ff' },   // torche murale gauche
-  { x: 1393, y: 253, r: 100, color: '#8ad4ff' },  // torche murale droite
-  { x: 836, y: 498, r: 190, color: '#b39ddb' }    // sceau central
+  { x: 836, y: 498, r: 190, color: '#b39ddb' }
 ];
 
 const COLS = Math.ceil(WIDTH / CELL);
@@ -189,11 +213,14 @@ function clientData() {
     rows: ROWS,
     floor: FLOOR,
     lights: LIGHTS,
+    flameSprite: FLAME_SPRITE,
+    flames: FLAMES,
     grid: GRID.join('\n')
   };
 }
 
 module.exports = {
   IMAGE, WIDTH, HEIGHT, CELL, COLS, ROWS, FLOOR, SOLIDS, LIGHTS, SPAWNS, GRID,
+  FLAME_SPRITE, FLAMES,
   solidAt, blocked, sweep, move, nearestFree, randomFree, clientData
 };

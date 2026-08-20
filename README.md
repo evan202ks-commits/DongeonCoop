@@ -27,8 +27,9 @@ public/js/auth.js       Inscription/connexion, jeton en localStorage, reprise de
 public/js/net.js        Socket, buffer de snapshots, horloge serveur, latence
 public/js/input.js      Clavier ZQSD/WASD/flèches + joystick tactile
 public/js/collision.js  Copie client du solveur de collisions (prédiction identique au serveur)
-public/js/render.js     Rendu canvas : image de la salle, halos des brasiers, butin, joueurs
-public/map/             salle-donjon.png (la carte) + fiche-assets.png (planche de référence)
+public/js/render.js     Rendu canvas : salle, flammes animées, halos, butin, joueurs
+public/map/             salle-donjon.png (la carte), flamme.png (les 8 images du feu), fiche-assets.png
+tools/prepare-flammes.py Regénère ces deux images depuis les sources (voir tools/README.md)
 public/js/main.js       Choix de classe, boucle client : prédiction, réconciliation, inventaire, équipement
 ```
 
@@ -46,7 +47,21 @@ Le déplacement se fait **axe par axe**, avec recherche dichotomique de la plus 
 
 **Points de dépôt.** Seize positions réparties sur la croix centrale et dans les quatre quartiers, recalées automatiquement sur une case libre au chargement : une valeur approximative dans `SPAWNS` suffit. Une position sauvegardée qui tomberait dans un mur (compte d'avant la salle, obstacle déplacé depuis) est repoussée sur la case libre la plus proche — personne ne se réveille enfermé dans la pierre.
 
-**Vivant.** Les neuf sources lumineuses (quatre brasiers, appliques du porche, torches murales, sceau central) respirent par-dessus l'image fixe côté client. Rien de tout ça n'est simulé : c'est du rendu pur, gratuit pour le serveur.
+## Les feux
+
+Les huit braseros brûlent pour de bon : une boucle de 8 images, à ~9 par seconde.
+
+**Les flammes ne sont pas dans la carte.** Elles y étaient peintes ; le script `tools/prepare-flammes.py` les en a effacées et les a extraites de la planche d'animation vers `public/map/flamme.png`, fond transparent. C'est la seule façon d'éviter une flamme animée par-dessus une flamme fixe.
+
+**Chaque feu bat à son propre rythme.** Dans `server/map.js`, `FLAMES` donne à chacun son `phase` (où il démarre dans la boucle) et son `rate` (à quelle vitesse il la parcourt). Sans ces deux réglages, les huit flammes vacilleraient à l'unisson et la boucle se verrait immédiatement — avec eux, elles ne retombent jamais en phase.
+
+**La lumière suit la flamme.** Le halo projeté au sol n'a pas sa propre sinusoïde : son rayon et son intensité sont pris dans `intensity`, l'ampleur de l'image en cours. Une grande langue de feu éclaire plus loin qu'une braise basse, et la salle respire au rythme exact des flammes.
+
+**Déplacer un feu** : `x, y` visent le creux de la vasque, `scale` l'adapte à son support. Rien d'autre à toucher — le rendu et le halo suivent.
+
+Le sceau gravé au centre garde son propre halo, sans flamme, dans `LIGHTS`.
+
+Rien de tout ça n'est simulé côté serveur : c'est du rendu pur, gratuit pour la salle.
 
 ## Classes et artefacts
 

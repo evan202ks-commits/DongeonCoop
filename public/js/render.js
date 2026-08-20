@@ -19,6 +19,15 @@ export class Renderer {
     this.room.onload = () => { this.roomReady = true; };
     this.room.src = this.map.image;
 
+    // Planche des flammes : 8 images cote a cote, fond transparent. Les
+    // flammes ont ete effacees de l'image de la salle, ce sont celles-ci qui
+    // brulent a leur place.
+    this.flameSprite = this.map.flameSprite;
+    this.flames = new Image();
+    this.flamesReady = false;
+    this.flames.onload = () => { this.flamesReady = true; };
+    this.flames.src = this.flameSprite.image;
+
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -60,6 +69,7 @@ export class Renderer {
     ctx.translate(-this.camera.x, -this.camera.y);
 
     this.drawGround();
+    this.drawFlames(now);
     for (const item of items) this.drawItem(item, now);
 
     // Tri par Y : les joueurs plus bas passent devant.
@@ -86,24 +96,68 @@ export class Renderer {
     }
   }
 
-  /** Brasiers et torches : halos qui respirent par-dessus l'image fixe. */
+  /**
+   * Image de la boucle pour une flamme a cet instant.
+   * Chaque feu a son propre decalage et sa propre cadence : ils vacillent
+   * ensemble sans jamais tomber en phase.
+   */
+  flameFrame(flame, now) {
+    const { frames, frameMs } = this.flameSprite;
+    const step = Math.floor((now * flame.rate) / frameMs + flame.phase);
+    return ((step % frames) + frames) % frames;
+  }
+
+  /** Les huit feux, dessines a meme le sol, derriere le butin et les joueurs. */
+  drawFlames(now) {
+    if (!this.flamesReady) return;
+    const ctx = this.ctx;
+    const { width: fw, height: fh } = this.flameSprite;
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    for (const flame of this.map.flames) {
+      const frame = this.flameFrame(flame, now);
+      const w = fw * flame.scale;
+      const h = fh * flame.scale;
+      // Ancrage sur le creux de la vasque : centre en x, base en y.
+      ctx.drawImage(this.flames, frame * fw, 0, fw, fh,
+                    Math.round(flame.x - w / 2), Math.round(flame.y - h), Math.round(w), Math.round(h));
+    }
+    ctx.restore();
+  }
+
+  /** Halos : ceux des flammes suivent l'image en cours, le sceau respire seul. */
   drawLights(now) {
     const ctx = this.ctx;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 
-    for (const light of this.map.lights) {
-      const phase = light.x * 0.013 + light.y * 0.021;
-      const pulse = 0.72 + Math.sin(now / 420 + phase) * 0.12 + Math.sin(now / 137 + phase) * 0.05;
-      const radius = light.r * pulse;
-      const grad = ctx.createRadialGradient(light.x, light.y, 0, light.x, light.y, radius);
-      grad.addColorStop(0, `${light.color}44`);
-      grad.addColorStop(0.45, `${light.color}18`);
+    const halo = (x, y, radius, color, strength) => {
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+      const inner = Math.round(Math.min(1, strength) * 68).toString(16).padStart(2, '0');
+      const mid = Math.round(Math.min(1, strength) * 24).toString(16).padStart(2, '0');
+      grad.addColorStop(0, `${color}${inner}`);
+      grad.addColorStop(0.45, `${color}${mid}`);
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(light.x, light.y, radius, 0, Math.PI * 2);
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
+    };
+
+    const levels = this.flameSprite.intensity;
+    for (const flame of this.map.flames) {
+      // Le halo est cale sur l'ampleur de l'image en cours : une grande langue
+      // de feu eclaire plus loin qu'une braise basse, et la lumiere bat donc au
+      // meme rythme que la flamme au lieu de suivre une sinusoide a part.
+      const level = levels[this.flameFrame(flame, now)];
+      halo(flame.x, flame.y - 12 * flame.scale, flame.glow * (0.7 + level * 0.35), flame.color, level);
+    }
+
+    for (const light of this.map.lights) {
+      const phase = light.x * 0.013 + light.y * 0.021;
+      const pulse = 0.72 + Math.sin(now / 420 + phase) * 0.12 + Math.sin(now / 137 + phase) * 0.05;
+      halo(light.x, light.y, light.r * pulse, light.color, 0.75);
     }
 
     ctx.restore();

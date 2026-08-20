@@ -175,6 +175,18 @@ async function walkToLoot(client, wanted = 1, tries = 80) {
   check('point de depot en dehors des murs',
     !DungeonMap.blocked(a.spawn.x, a.spawn.y, CONFIG.PLAYER.radius));
 
+  // --- Feux de la salle ---
+  const sprite = a.welcome.config.MAP.flameSprite;
+  const flames = a.welcome.config.MAP.flames;
+  check('les 8 feux sont envoyes au client', flames.length === 8, `${flames.length} feux`);
+  check('planche de flammes annoncee', sprite.frames === 8 && sprite.width > 0 && sprite.height > 0,
+    `${sprite.frames} images de ${sprite.width}x${sprite.height}`);
+  check('une ampleur par image de la boucle', sprite.intensity.length === sprite.frames);
+  check('chaque feu a son propre rythme',
+    new Set(flames.map(f => `${f.phase}/${f.rate}`)).size === flames.length);
+  check('les feux sont poses sur les braseros, pas dans un mur',
+    flames.every(f => f.x > 0 && f.x < CONFIG.WORLD.width && f.y > 0 && f.y < CONFIG.WORLD.height));
+
   const mageArts = Classes.artifactsOf('mage').map(x => x.id);
   check('les 3 artefacts du Mage sont dans son sac',
     mageArts.every(id => types(a.inventory).includes(id)),
