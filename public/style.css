@@ -61,8 +61,38 @@ button.trade-btn:active{transform:translateY(1px);}
 }
 .slot.filled{cursor:pointer;border-color:#38455f;}
 .slot.filled:hover{border-color:var(--accent);}
+.slot.filled:hover .gem{animation-play-state:paused;transform:rotate(45deg) scale(1.18);}
 .slot .gem{width:18px;height:18px;border-radius:4px;transform:rotate(45deg);}
 .slot .qty{position:absolute;right:3px;bottom:1px;font-size:.68rem;color:var(--text);font-weight:700;text-shadow:0 1px 2px #000;}
+
+/* Icone d'objet (image) a la place de l'aplat de couleur : garde la meme place que .gem,
+   mais SANS la rotation en losange (une image d'objet doit rester droite). */
+.gem{transition:transform .15s ease;}
+.gem.icon{
+  background-size:76% 76%;background-repeat:no-repeat;background-position:center;
+  image-rendering:pixelated;border-radius:6px;
+}
+/* Specificite superieure a .slot/.eq/.trade-item .gem (qui posent le rotate(45deg))
+   pour etre certain d'annuler la rotation en losange sur les icones, quel que soit
+   l'ordre des regles dans ce fichier. */
+.slot .gem.icon, .eq .gem.icon, .trade-item .gem.icon{
+  transform:none;
+  animation:gem-float-icon 2.6s ease-in-out infinite;
+}
+.slot.filled:hover .gem.icon,
+.eq.filled:hover .gem.icon,
+.trade-item.actionable:hover .gem.icon{
+  animation-play-state:paused;transform:scale(1.18);
+}
+/* Legere respiration/flottement pour que les icones d'objets paraissent vivantes (sans rotation en losange). */
+@keyframes gem-float-icon{
+  0%,100%{transform:translateY(0) scale(1);}
+  50%{transform:translateY(-2px) scale(1.05);}
+}
+@keyframes gem-float{
+  0%,100%{transform:rotate(45deg) translateY(0) scale(1);}
+  50%{transform:rotate(45deg) translateY(-2px) scale(1.05);}
+}
 
 /* --- Equipement --- */
 .panel h2.mt{margin-top:10px;}
@@ -75,6 +105,7 @@ button.trade-btn:active{transform:translateY(1px);}
 }
 .eq.filled{border-style:solid;border-color:#4c5b78;cursor:pointer;background:rgba(30,41,59,.7);}
 .eq.filled:hover{border-color:var(--accent-2);}
+.eq.filled:hover .gem{animation-play-state:paused;transform:rotate(45deg) scale(1.18);}
 .eq .gem{width:14px;height:14px;border-radius:3px;transform:rotate(45deg);}
 .eq-label{opacity:.8;}
 .slot.artifact{border-color:#7c6a3a;box-shadow:inset 0 0 8px rgba(250,204,21,.18);}
@@ -128,6 +159,7 @@ button.mini.decline:hover{background:rgba(248,113,113,.14);}
 .trade-item .qty{color:var(--muted);font-weight:700;}
 .trade-item.actionable{cursor:pointer;}
 .trade-item.actionable:hover{border-color:var(--accent-2);}
+.trade-item.actionable:hover .gem{animation-play-state:paused;transform:rotate(45deg) scale(1.18);}
 .trade-footer{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
   margin-top:16px;padding-top:12px;border-top:1px solid var(--line);

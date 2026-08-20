@@ -7,12 +7,12 @@
 const { ARTIFACTS } = require('./classes');
 
 const LOOT = {
-  piece_or:   { name: "Pièce d'or",     color: '#facc15', stackable: true,  weight: 34 },
-  champignon: { name: 'Champignon',     color: '#fb7185', stackable: true,  weight: 22 },
-  potion:     { name: 'Potion de soin', color: '#f472b6', stackable: true,  weight: 16 },
-  torche:     { name: 'Torche',         color: '#fb923c', stackable: true,  weight: 12 },
-  cle_rouille:{ name: 'Clé rouillée',   color: '#a8a29e', stackable: false, weight: 9 },
-  cristal:    { name: 'Cristal',        color: '#38bdf8', stackable: true,  weight: 7 }
+  piece_or:   { name: "Pièce d'or",     color: '#facc15', stackable: true,  weight: 34, icon: '/icons/piece_or.png' },
+  champignon: { name: 'Champignon',     color: '#fb7185', stackable: true,  weight: 22, icon: '/icons/champignon.png' },
+  potion:     { name: 'Potion de soin', color: '#f472b6', stackable: true,  weight: 16, icon: '/icons/potion.png' },
+  torche:     { name: 'Torche',         color: '#fb923c', stackable: true,  weight: 12, icon: '/icons/torche.png' },
+  cle_rouille:{ name: 'Clé rouillée',   color: '#a8a29e', stackable: false, weight: 9,  icon: '/icons/cle_rouille.png' },
+  cristal:    { name: 'Cristal',        color: '#38bdf8', stackable: true,  weight: 7,  icon: '/icons/cristal.png' }
 };
 
 const ITEMS = { ...LOOT };

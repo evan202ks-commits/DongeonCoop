@@ -267,7 +267,7 @@ function drawTrade() {
 
       const gem = document.createElement('div');
       gem.className = 'gem';
-      gem.style.background = def.color;
+      styleGem(gem, def);
 
       const name = document.createElement('span');
       name.className = 'name';
@@ -339,6 +339,19 @@ function log(message) {
 // --- Inventaire et equipement ------------------------------------------
 const itemDef = (type) => net.items[type] || { color: '#94a3b8', name: type };
 
+/** Habille un ".gem" (sac, equipement, echange) : icone si disponible, sinon aplat de couleur. */
+function styleGem(gem, def) {
+  if (def.icon) {
+    gem.classList.add('icon');
+    gem.style.backgroundColor = 'transparent';
+    gem.style.backgroundImage = `url(${def.icon})`;
+  } else {
+    gem.classList.remove('icon');
+    gem.style.backgroundImage = 'none';
+    gem.style.background = def.color;
+  }
+}
+
 function drawInventory() {
   const grid = el('slots');
   const size = net.config ? net.config.INVENTORY.slots : inventory.length;
@@ -359,7 +372,7 @@ function drawInventory() {
 
       const gem = document.createElement('div');
       gem.className = 'gem';
-      gem.style.background = def.color;
+      styleGem(gem, def);
       cell.appendChild(gem);
 
       if (slot.qty > 1) {
@@ -394,7 +407,7 @@ function drawEquipment() {
       const def = itemDef(type);
       const gem = document.createElement('div');
       gem.className = 'gem';
-      gem.style.background = def.color;
+      styleGem(gem, def);
       cell.appendChild(gem);
       cell.title = `${def.name} — ${def.desc} — clic pour déséquiper`;
       cell.addEventListener('click', () => net.unequip(slotName));

@@ -8,8 +8,22 @@ export class Renderer {
     this.classes = classes;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.camera = { x: 0, y: 0 };
+    this.iconCache = new Map(); // src -> { img, ready }
     this.resize();
     window.addEventListener('resize', () => this.resize());
+  }
+
+  /** Charge (et met en cache) l'icone d'un objet ; renvoie l'image des qu'elle est prete. */
+  getIcon(src) {
+    let entry = this.iconCache.get(src);
+    if (!entry) {
+      const img = new Image();
+      entry = { img, ready: false };
+      img.onload = () => { entry.ready = true; };
+      img.src = src;
+      this.iconCache.set(src, entry);
+    }
+    return entry.ready ? entry.img : null;
   }
 
   resize() {
@@ -105,26 +119,56 @@ export class Renderer {
     }
   }
 
-  /** Objet au sol : losange colore, leger flottement pour attirer l'oeil. */
+  /** Objet au sol : icone (ou losange colore a defaut), animation de flottement pour attirer l'oeil. */
   drawItem(item, now) {
     const ctx = this.ctx;
     const def = this.items[item.t] || { color: '#94a3b8', name: item.t };
-    const bob = Math.sin(now / 350 + item.x * 0.05) * 3;
+    // Dephasage par objet (base sur sa position) pour que chaque item flotte a son propre rythme.
+    const phase = item.x * 0.05 + item.y * 0.03;
+    const bob = Math.sin(now / 350 + phase) * 3;
+    const wobble = Math.sin(now / 500 + phase) * 0.08;          // leger balancement
+    const breathe = 1 + Math.sin(now / 420 + phase) * 0.06;     // respiration d'echelle
+    const glow = 0.35 + Math.sin(now / 300 + phase) * 0.15;     // scintillement doux
 
+    // Ombre au sol : respire un peu moins pour rester ancree.
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.beginPath();
-    ctx.ellipse(item.x, item.y + 9, 9, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(item.x, item.y + 9, 9 * (0.94 + (breathe - 1)), 4, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.save();
-    ctx.translate(item.x, item.y + bob);
-    ctx.rotate(Math.PI / 4);
-    ctx.fillStyle = def.color;
-    ctx.fillRect(-7, -7, 14, 14);
-    ctx.strokeStyle = 'rgba(2,6,23,0.55)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(-7, -7, 14, 14);
-    ctx.restore();
+    const icon = def.icon ? this.getIcon(def.icon) : null;
+
+    if (icon) {
+      ctx.save();
+      ctx.translate(item.x, item.y + bob);
+      ctx.rotate(wobble);
+      ctx.scale(breathe, breathe);
+
+      // Halo scintillant derriere l'icone pour donner un peu de vie/magie.
+      const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 14);
+      grad.addColorStop(0, `${def.color}${Math.round(glow * 255).toString(16).padStart(2, '0')}`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      const size = 22;
+      ctx.imageSmoothingEnabled = false; // rendu net pour des sprites pixel-art
+      ctx.drawImage(icon, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      // Repli : losange colore pour les types sans icone dediee.
+      ctx.save();
+      ctx.translate(item.x, item.y + bob);
+      ctx.rotate(Math.PI / 4 + wobble);
+      ctx.fillStyle = def.color;
+      ctx.fillRect(-7, -7, 14, 14);
+      ctx.strokeStyle = 'rgba(2,6,23,0.55)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-7, -7, 14, 14);
+      ctx.restore();
+    }
   }
 
   drawPlayer(p, isSelf, now) {
