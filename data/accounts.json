@@ -6,14 +6,14 @@
       "passHash": "$2a$10$NMxbqmQW39AvsA7JIMS0/.GuqrXjGCPaQOgtp4h60U6cRtTVqImaO",
       "color": "#4ade80",
       "createdAt": 1787244279617,
-      "lastSeen": 1787251937945,
+      "lastSeen": 1787255978266,
       "lastClass": "archer",
       "classes": {
         "archer": {
           "position": {
-            "x": 798.91,
-            "y": 367.74,
-            "angle": 1.571
+            "x": 823.73,
+            "y": 459.03,
+            "angle": -1.571
           },
           "inventory": [
             {
@@ -30,7 +30,7 @@
             },
             {
               "type": "piece_or",
-              "qty": 2
+              "qty": 3
             },
             {
               "type": "potion",
@@ -59,10 +59,10 @@
             "talisman": null
           },
           "stats": {
-            "playtimeMs": 448065,
-            "pickups": 24,
-            "sessions": 4,
-            "distance": 14007
+            "playtimeMs": 488576,
+            "pickups": 25,
+            "sessions": 6,
+            "distance": 17032
           },
           "createdAt": 1787244280371
         },
