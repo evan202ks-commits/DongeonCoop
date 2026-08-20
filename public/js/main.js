@@ -4,10 +4,12 @@ import { Input } from './input.js';
 import { Renderer } from './render.js';
 import { Collision } from './collision.js';
 import { Chat } from './chat.js';
+import { Market } from './market.js';
 
 const net = new Net();
 const input = new Input();
 const chat = new Chat();
+const market = new Market();
 let renderer = null;
 let collision = null;          // grille de collision de la salle (recue avec la config)
 
@@ -182,6 +184,7 @@ net.onWelcome = (data) => {
   renderer.centerOn(self.x, self.y);
 
   el('roomId').textContent = data.roomId;
+  el('gold').textContent = data.gold || 0;
   el('pickups').textContent = data.you.stats?.pickups || 0;
   el('classLabel').textContent = catalog.classes[data.you.classId].name;
   el('gate').classList.add('hidden');
@@ -198,6 +201,21 @@ net.onWelcome = (data) => {
   });
   chat.replay(data.chatHistory);
 
+  // L'hotel de vente a besoin du catalogue d'objets et d'une vue du sac :
+  // il ne stocke rien lui-meme, il lit ce que le serveur a deja envoye.
+  market.setup({
+    accountId: account ? account.accountId : null,
+    itemDef,
+    bag: () => inventory,
+    actions: {
+      browse: () => net.marketBrowse(),
+      list: (type, qty, price) => net.marketList(type, qty, price),
+      cancel: (id) => net.marketCancel(id),
+      buy: (id, qty) => net.marketBuy(id, qty),
+      cash: () => net.marketCash()
+    }
+  });
+
   drawInventory();
   drawEquipment();
   drawAttrs(data.you.attrs);
@@ -212,6 +230,8 @@ net.onWelcome = (data) => {
 
 net.onChat = (msg) => chat.push(msg);
 
+net.onMarket = (type, data) => market.apply(type, data);
+
 net.onInventory = (data) => {
   inventory = data.slots;
   if (data.equipment) equipment = data.equipment;
@@ -221,7 +241,8 @@ net.onInventory = (data) => {
   if (data.picked) log(`+${data.picked.qty} ${data.picked.name}`);
   if (data.equipped) log(`${data.equipped} équipé.`);
   if (data.stats) el('pickups').textContent = data.stats.pickups || 0;
-  if (activeTrade) drawTrade(); // le sac affiché dans l'echange doit rester a jour
+  if (activeTrade) drawTrade();  // le sac affiché dans l'echange doit rester a jour
+  market.refreshBag();           // idem pour l'onglet Vendre de l'hotel de vente
 };
 
 net.onEvent = (type, payload) => {
@@ -619,6 +640,19 @@ for (const id of ['username', 'password']) {
 // Derniere sauvegarde avant fermeture de l'onglet.
 // F2 : affiche la grille de collision de la salle, pratique pour caler un
 // obstacle apres avoir touche a server/map.js.
+// M : ouvre et ferme l'hotel de vente.
+window.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 'm' || !joined || chat.isTyping()) return;
+  e.preventDefault();
+  market.toggle();
+});
+
+// Echap ferme la fenetre ouverte avant tout le reste.
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || chat.isTyping()) return;
+  if (market.open) { e.preventDefault(); market.close(); }
+});
+
 // E : actionne la grande porte quand on est devant. Ignore pendant qu'on tape.
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() !== 'e' || !joined || chat.isTyping()) return;

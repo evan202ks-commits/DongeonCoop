@@ -455,3 +455,112 @@ button.link{
   0%,100%{box-shadow:0 6px 20px rgba(0,0,0,.45),0 0 0 0 rgba(167,139,250,.35);}
   50%{box-shadow:0 6px 20px rgba(0,0,0,.45),0 0 0 7px rgba(167,139,250,0);}
 }
+
+/* ======================================================================
+   Hotel de vente : chacun depose ses objets au prix qu'il fixe.
+   Meme grammaire visuelle que la fenetre d'echange.
+   ====================================================================== */
+button.panel-btn{
+  margin-top:8px;pointer-events:auto;cursor:pointer;width:100%;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  background:rgba(250,204,21,.10);border:1px solid #facc15;border-radius:8px;
+  color:#facc15;font:700 .68rem/1 'Segoe UI',Roboto,Arial,sans-serif;
+  letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;
+}
+button.panel-btn:hover{background:rgba(250,204,21,.22);}
+button.panel-btn span{
+  border:1px solid rgba(250,204,21,.5);border-radius:4px;
+  padding:1px 5px;font-size:.62rem;opacity:.9;
+}
+
+.market-modal{
+  position:fixed;inset:0;z-index:32;display:flex;align-items:center;justify-content:center;
+  background:rgba(2,6,16,.72);backdrop-filter:blur(3px);padding:16px;
+}
+.market-modal[hidden]{display:none;}
+.market-card{
+  width:min(760px,100%);max-height:88vh;display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:14px 16px;box-shadow:0 20px 60px rgba(0,0,0,.6);
+}
+.market-head{display:flex;align-items:center;gap:14px;}
+.market-head h2{margin:0;flex:1;font-size:.86rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text);}
+.market-purse{font-size:.8rem;color:var(--muted);}
+.market-purse b{color:#facc15;font-size:.95rem;}
+
+.market-tabs{display:flex;gap:4px;margin:12px 0 0;border-bottom:1px solid var(--line);}
+.market-tab{
+  cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;
+  color:var(--muted);font:700 .7rem/1 'Segoe UI',Roboto,Arial,sans-serif;
+  letter-spacing:.08em;text-transform:uppercase;padding:9px 12px;
+}
+.market-tab:hover{color:var(--text);}
+.market-tab.active{color:var(--text);border-bottom-color:#facc15;}
+.market-tab span{opacity:.65;font-weight:600;}
+
+.market-error{color:var(--danger);font-size:.78rem;min-height:1.1em;padding:6px 0 0;}
+.market-pane{display:flex;flex-direction:column;gap:8px;overflow:hidden;}
+.market-hint{margin:0;font-size:.76rem;color:var(--muted);line-height:1.45;}
+.market-hint-inline{color:var(--muted);font-size:.72rem;margin-left:8px;font-weight:500;}
+
+#marketSearch,.market-form input{
+  background:rgba(15,23,42,.7);border:1px solid var(--line);border-radius:8px;
+  color:var(--text);font-size:.82rem;padding:8px 10px;outline:none;
+}
+#marketSearch:focus,.market-form input:focus{border-color:#facc15;}
+#marketSearch::placeholder{color:#5b6b86;}
+
+.market-list{
+  overflow-y:auto;max-height:46vh;display:flex;flex-direction:column;gap:5px;
+  scrollbar-width:thin;scrollbar-color:#2b3b58 transparent;padding-right:2px;
+}
+.market-list.compact{max-height:26vh;}
+.market-list::-webkit-scrollbar{width:7px;}
+.market-list::-webkit-scrollbar-thumb{background:#2b3b58;border-radius:4px;}
+
+.market-row{
+  display:flex;align-items:center;gap:10px;
+  background:rgba(15,23,42,.55);border:1px solid var(--line);border-radius:9px;
+  padding:8px 10px;font-size:.82rem;
+}
+.market-row .gem{width:24px;height:24px;flex:none;border-radius:6px;}
+.market-row .name{flex:1;min-width:0;color:var(--text);font-weight:600;}
+.market-row .name small{display:block;color:var(--muted);font-weight:500;font-size:.72rem;margin-top:1px;}
+.market-row .price{flex:none;color:#facc15;font-weight:700;white-space:nowrap;}
+.market-row .price small{color:var(--muted);font-weight:500;}
+.market-row input{
+  flex:none;width:56px;background:rgba(15,23,42,.7);border:1px solid var(--line);
+  border-radius:6px;color:var(--text);font-size:.78rem;padding:5px 6px;outline:none;
+}
+.market-row.selectable{cursor:pointer;}
+.market-row.selectable:hover{border-color:#facc15;}
+.market-row.selected{border-color:#facc15;background:rgba(250,204,21,.10);}
+.market-row.own{opacity:.6;}
+.market-empty{color:var(--muted);font-size:.8rem;padding:14px 4px;text-align:center;}
+
+.market-form{
+  display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;
+  border:1px solid var(--line);border-radius:10px;padding:12px;background:rgba(8,13,24,.6);
+}
+.market-form-item{display:flex;align-items:center;gap:8px;font-size:.85rem;}
+.market-form-item .gem{width:26px;height:26px;border-radius:6px;}
+.market-form label{display:flex;flex-direction:column;gap:4px;font-size:.7rem;color:var(--muted);
+  letter-spacing:.06em;text-transform:uppercase;}
+.market-form input{width:104px;}
+.market-total{font-size:.82rem;color:var(--muted);}
+.market-total b{color:#facc15;font-size:1rem;}
+
+button.mini.buy{
+  flex:none;padding:5px 11px;border-radius:7px;cursor:pointer;
+  background:rgba(250,204,21,.14);border:1px solid #facc15;color:#facc15;
+  font-size:.7rem;font-weight:700;letter-spacing:.03em;
+}
+button.mini.buy:hover{background:rgba(250,204,21,.28);}
+button.mini.buy:disabled{opacity:.4;cursor:not-allowed;}
+
+@media (max-width:760px){
+  .market-card{padding:12px;max-height:92vh;}
+  .market-list{max-height:38vh;}
+  .market-form input{width:84px;}
+  .market-row{font-size:.78rem;}
+}

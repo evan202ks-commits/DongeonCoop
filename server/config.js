@@ -57,6 +57,15 @@ const CONFIG = {
     bubbleMs: 6500      // duree de la bulle au-dessus du personnage
   },
 
+  // Hotel de vente : chacun depose ses objets au prix qu'il veut, les autres
+  // achetent a ce prix. La monnaie est la bourse du compte (voir MARKET.coinValue).
+  MARKET: {
+    startingGold: 250,    // bourse offerte a la creation du compte
+    maxPerAccount: 8,     // annonces simultanees par compte
+    maxPrice: 99999,      // prix unitaire maximum
+    coinValue: 20         // ce que rapporte une piece d'or deposee en bourse
+  },
+
   TRADE: {
     requestRange: 160,      // distance max (px) pour proposer un echange a un autre joueur
     requestTimeoutMs: 20000,// delai avant expiration d'une demande sans reponse

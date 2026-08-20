@@ -8,6 +8,7 @@ const RoomManager = require('./server/RoomManager');
 const Accounts = require('./server/accounts');
 const Classes = require('./server/classes');
 const TradeManager = require('./server/trade');
+const Market = require('./server/market');
 const { ChatManager, publicCatalog: chatCatalog } = require('./server/chat');
 const { ITEMS } = require('./server/items');
 
@@ -20,6 +21,7 @@ const rooms = new RoomManager();
 const accounts = new Accounts();
 const trades = new TradeManager(rooms);
 const chat = new ChatManager(rooms);
+const market = new Market(accounts);
 const online = new Map(); // accountId -> socket.id (un seul jeu par compte)
 
 app.use(express.json({ limit: '8kb' }));
@@ -135,6 +137,7 @@ io.on('connection', (socket) => {
       },
       inventory: player.inventory.toJSON(),
       equipment: player.equipment,
+      gold: accounts.gold(player.accountId),
       door: room.doorState(),   // sequence en cours : l'arrivant la reprend au bon instant
       channels: chatCatalog(),
       chatHistory: chat.historyFor(room.id),
@@ -169,6 +172,76 @@ io.on('connection', (socket) => {
     io.to(room.id).emit('door:open', { at: result.at, by: player.name });
     chat.roomNotice(io, room, `${player.name} actionne le mécanisme : la grande porte s'ouvre.`);
   });
+
+  // --- Hotel de vente ----------------------------------------------------
+  /** Renvoie au joueur son sac a jour : toute action du marche le modifie. */
+  const sendInventory = (player) => {
+    socket.emit('inventory', {
+      slots: player.inventory.toJSON(),
+      equipment: player.equipment,
+      attrs: player.attrs,
+      stats: player.stats
+    });
+  };
+
+  /** L'etat du marche est personnel (bourse, annonces utilisees) : un envoi par joueur. */
+  const sendMarket = (player) => socket.emit('market:state', market.snapshot(player.accountId));
+
+  /** Previens les autres fenetres ouvertes qu'elles affichent un marche perime. */
+  const marketChanged = () => socket.broadcast.emit('market:changed');
+
+  const withPlayer = (fn) => {
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (player) fn(player);
+  };
+
+  socket.on('market:browse', () => withPlayer(sendMarket));
+
+  socket.on('market:list', (payload) => withPlayer((player) => {
+    const result = market.list(player, payload || {});
+    if (result.error) return socket.emit('market:error', result.error);
+    sendInventory(player);
+    sendMarket(player);
+    marketChanged();
+    const l = result.listing;
+    chat.notice(io, socket.id, `${l.qty} ${l.name} en vente à ${l.price} or l'unité.`);
+  }));
+
+  socket.on('market:cancel', (id) => withPlayer((player) => {
+    const result = market.cancel(player, id);
+    if (result.error) return socket.emit('market:error', result.error);
+    sendInventory(player);
+    sendMarket(player);
+    marketChanged();
+    chat.notice(io, socket.id, `Annonce retirée : ${result.listing.qty} ${result.listing.name} de retour dans ton sac.`);
+  }));
+
+  socket.on('market:buy', (payload) => withPlayer((player) => {
+    const result = market.buy(player, payload || {});
+    if (result.error) return socket.emit('market:error', result.error);
+
+    sendInventory(player);
+    sendMarket(player);
+    marketChanged();
+    chat.notice(io, socket.id, `Acheté : ${result.qty} ${result.name} pour ${result.total} or.`);
+
+    // Le vendeur est paye sur son compte : s'il est en ligne, on le lui dit et
+    // on rafraichit sa bourse tout de suite.
+    const sellerSocket = online.get(result.sellerId);
+    if (sellerSocket && sellerSocket !== socket.id) {
+      io.to(sellerSocket).emit('market:purse', { gold: accounts.gold(result.sellerId) });
+      chat.notice(io, sellerSocket, `Vendu : ${result.qty} ${result.name} à ${player.name} pour ${result.total} or.`);
+    }
+  }));
+
+  socket.on('market:cash', () => withPlayer((player) => {
+    const result = market.cashCoins(player);
+    if (result.error) return socket.emit('market:error', result.error);
+    sendInventory(player);
+    sendMarket(player);
+    chat.notice(io, socket.id, `${result.coins} pièce(s) d'or déposée(s) en bourse : +${result.amount} or.`);
+  }));
 
   socket.on('input', (cmd) => {
     if (room) room.queueInput(socket.id, cmd);
@@ -278,6 +351,7 @@ setInterval(() => {
     }
   }
   accounts.flush();
+  market.flush();
   chat.prune();
 }, CONFIG.SAVE.autosaveMs);
 

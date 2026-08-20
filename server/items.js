@@ -6,13 +6,16 @@
 // ils sont attribues a la classe qui les possede.
 const { ARTIFACTS } = require('./classes');
 
+// `weight` est le poids dans le tirage du butin, `value` un prix indicatif :
+// il ne contraint rien, l'hotel de vente s'en sert seulement pour suggerer un
+// prix au vendeur. C'est lui qui decide.
 const LOOT = {
-  piece_or:   { name: "Pièce d'or",     color: '#facc15', stackable: true,  weight: 34, icon: '/icons/piece_or.png' },
-  champignon: { name: 'Champignon',     color: '#fb7185', stackable: true,  weight: 22, icon: '/icons/champignon.png' },
-  potion:     { name: 'Potion de soin', color: '#f472b6', stackable: true,  weight: 16, icon: '/icons/potion.png' },
-  torche:     { name: 'Torche',         color: '#fb923c', stackable: true,  weight: 12, icon: '/icons/torche.png' },
-  cle_rouille:{ name: 'Clé rouillée',   color: '#a8a29e', stackable: false, weight: 9,  icon: '/icons/cle_rouille.png' },
-  cristal:    { name: 'Cristal',        color: '#38bdf8', stackable: true,  weight: 7,  icon: '/icons/cristal.png' }
+  piece_or:   { name: "Pièce d'or",     color: '#facc15', stackable: true,  weight: 34, value: 20,  icon: '/icons/piece_or.png' },
+  champignon: { name: 'Champignon',     color: '#fb7185', stackable: true,  weight: 22, value: 6,   icon: '/icons/champignon.png' },
+  potion:     { name: 'Potion de soin', color: '#f472b6', stackable: true,  weight: 16, value: 30,  icon: '/icons/potion.png' },
+  torche:     { name: 'Torche',         color: '#fb923c', stackable: true,  weight: 12, value: 12,  icon: '/icons/torche.png' },
+  cle_rouille:{ name: 'Clé rouillée',   color: '#a8a29e', stackable: false, weight: 9,  value: 90,  icon: '/icons/cle_rouille.png' },
+  cristal:    { name: 'Cristal',        color: '#38bdf8', stackable: true,  weight: 7,  value: 160, icon: '/icons/cristal.png' }
 };
 
 const ITEMS = { ...LOOT };

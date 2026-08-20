@@ -1,0 +1,23 @@
+{
+  "listings": {
+    "v1": {
+      "id": "v1",
+      "sellerId": "4fcc8c40-2efd-4011-b77f-4a670b66745a",
+      "sellerName": "vvsvd",
+      "type": "piece_or",
+      "qty": 1,
+      "price": 20,
+      "at": 1787251916130
+    },
+    "v2": {
+      "id": "v2",
+      "sellerId": "4fcc8c40-2efd-4011-b77f-4a670b66745a",
+      "sellerName": "vvsvd",
+      "type": "piece_or",
+      "qty": 1,
+      "price": 20,
+      "at": 1787251918206
+    }
+  },
+  "seq": 2
+}

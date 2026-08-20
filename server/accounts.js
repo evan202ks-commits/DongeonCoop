@@ -54,6 +54,14 @@ class Accounts {
     if (!user.classes) user.classes = {};
     if (user.lastClass === undefined) user.lastClass = null;
 
+    // La bourse est au compte, pas au personnage : l'or gagne avec un Mage
+    // reste depensable avec un Voleur. Les comptes d'avant l'hotel de vente
+    // recoivent la mise de depart.
+    if (typeof user.gold !== 'number' || !Number.isFinite(user.gold)) {
+      user.gold = CONFIG.MARKET.startingGold;
+    }
+    user.gold = Math.max(0, Math.floor(user.gold));
+
     const hasLegacyRoot = 'position' in user || 'inventory' in user;
     if (hasLegacyRoot && !user.legacy) {
       user.legacy = {
@@ -92,6 +100,7 @@ class Accounts {
       color: COLORS[Object.keys(this.users).length % COLORS.length],
       createdAt: Date.now(),
       lastSeen: Date.now(),
+      gold: CONFIG.MARKET.startingGold,
       lastClass: null,      // aucune classe jouee : l'ecran de choix part vierge
       classes: {}           // rempli a la premiere partie de chaque classe
     };
@@ -199,6 +208,33 @@ class Accounts {
     return state;
   }
 
+  // --- Bourse -------------------------------------------------------------
+  // L'or ne transite jamais par l'inventaire : il vit sur le compte, donc un
+  // vendeur deconnecte est paye quand meme. C'est ici la source de verite.
+  gold(accountId) {
+    const user = this.users[accountId];
+    return user ? Math.max(0, Math.floor(user.gold || 0)) : 0;
+  }
+
+  addGold(accountId, amount) {
+    const user = this.users[accountId];
+    const n = Math.floor(Number(amount) || 0);
+    if (!user || n <= 0) return this.gold(accountId);
+    user.gold = this.gold(accountId) + n;
+    this.store.touch();
+    return user.gold;
+  }
+
+  /** Debite si le compte a de quoi payer. Renvoie false sans rien changer sinon. */
+  spendGold(accountId, amount) {
+    const user = this.users[accountId];
+    const n = Math.floor(Number(amount) || 0);
+    if (!user || n <= 0 || this.gold(accountId) < n) return false;
+    user.gold = this.gold(accountId) - n;
+    this.store.touch();
+    return true;
+  }
+
   // --- Profils ------------------------------------------------------------
   /** Vue compte : sert a l'ecran de choix de classe (progression de chaque personnage). */
   profile(user) {
@@ -221,6 +257,7 @@ class Accounts {
       color: user.color,
       lastClass: user.lastClass || null,
       createdAt: user.createdAt,
+      gold: this.gold(user.id),
       classes
     };
   }
@@ -233,6 +270,7 @@ class Accounts {
       name: user.username,
       color: user.color,
       classId,
+      gold: this.gold(user.id),
       position: state.position,
       inventory: Inventory.sanitize(state.inventory),
       equipment: Classes.sanitizeEquipment(classId, state.equipment),

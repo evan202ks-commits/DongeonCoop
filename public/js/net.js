@@ -14,6 +14,7 @@ export class Net {
     this.onEvent = () => {};
     this.onTrade = () => {};
     this.onChat = () => {};
+    this.onMarket = () => {};
   }
 
   connect(token, classId) {
@@ -43,6 +44,12 @@ export class Net {
 
     s.on('inventory', (data) => this.onInventory(data));
     s.on('chat:message', (msg) => this.onChat(msg));
+
+    // --- Hotel de vente ---
+    s.on('market:state', (data) => this.onMarket('state', data));
+    s.on('market:changed', () => this.onMarket('changed', {}));
+    s.on('market:purse', (data) => this.onMarket('purse', data));
+    s.on('market:error', (msg) => this.onMarket('error', { msg }));
     s.on('notice', (msg) => this.onEvent('notice', { msg }));
     s.on('auth:error', (msg) => this.onEvent('auth-error', { msg }));
     s.on('door:open', (d) => this.onEvent('door', d));
@@ -66,6 +73,18 @@ export class Net {
   /** Envoi d'un message : { channel, text, to } — le serveur revalide tout. */
   sendChat(payload) {
     if (this.socket && this.socket.connected) this.socket.emit('chat:send', payload);
+  }
+
+  // --- Hotel de vente ---
+  marketBrowse() { this.emit('market:browse'); }
+  marketList(type, qty, price) { this.emit('market:list', { type, qty, price }); }
+  marketCancel(id) { this.emit('market:cancel', id); }
+  marketBuy(id, qty) { this.emit('market:buy', { id, qty }); }
+  marketCash() { this.emit('market:cash'); }
+
+  /** Envoi generique : ignore silencieusement si la socket est tombee. */
+  emit(event, payload) {
+    if (this.socket && this.socket.connected) this.socket.emit(event, payload);
   }
 
   /** Appui sur E devant la porte — le serveur revalide la distance. */

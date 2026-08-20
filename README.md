@@ -10,6 +10,7 @@ npm start          # http://localhost:3000
 npm test           # tests de fumée (serveur déjà lancé)
 npm run test:chat  # tests de fumée du chat
 npm run test:porte # tests de fumée de la porte
+npm run test:market # tests de fumée de l'hôtel de vente
 ```
 
 ## Architecture
@@ -26,12 +27,14 @@ server/items.js         Catalogue d'objets (butin + artefacts) et tirage pondér
 server/Room.js          Instance de salle : joueurs, butin au sol, simulation, snapshots
 server/RoomManager.js   Répartition des joueurs, création de salles au-delà de 16
 server/chat.js          Chat : canaux, portées, chuchotements, anti-flood, historique
+server/market.js        Hôtel de vente : annonces, séquestre, achat, bourse des comptes
 public/js/auth.js       Inscription/connexion, jeton en localStorage, reprise de session
 public/js/net.js        Socket, buffer de snapshots, horloge serveur, latence
 public/js/input.js      Clavier ZQSD/WASD/flèches + joystick tactile
 public/js/collision.js  Copie client du solveur de collisions (prédiction identique au serveur)
 public/js/render.js     Rendu canvas : salle, flammes animées, halos, butin, joueurs, bulles de dialogue
 public/js/chat.js       Fenêtre de chat : onglets, canaux, commandes, historique de saisie
+public/js/market.js     Fenêtre d'hôtel de vente : acheter, vendre, mes annonces
 public/map/             salle-donjon.png (la carte), flamme.png (les 8 images du feu), fiche-assets.png
 tools/prepare-flammes.py Regénère ces deux images depuis les sources (voir tools/README.md)
 tools/preview-porte.py  Aperçu hors ligne de l'ouverture de la porte (calage de l'arche)
@@ -63,6 +66,22 @@ Appuyer pendant que la séquence tourne ne fait rien ; appuyer **porte déjà ou
 **Régler la porte** se fait dans `DOOR` (`server/map.js`) : `arch` est l'ouverture (demi-cercle de rayon `r` centré en `x, y`, prolongé jusqu'au seuil `bottom`), `wheel` le disque du mécanisme et son quart de tour, `slide` la course de chaque battant, `use` la zone d'action et sa portée. `python3 tools/preview-porte.py` rejoue la même géométrie hors ligne et écrit une planche des six étapes : de quoi caler l'arche sans lancer le jeu.
 
 **La porte ne change rien aux collisions** : elle est dans le mur du haut, et le passage sort de la carte. C'est une mise en scène actionnable, pas un accès — le point de `DOOR.use` est posé sur la dalle *devant* la porte, jamais dessus, sinon aucun joueur ne pourrait jamais l'atteindre.
+
+## L'hôtel de vente
+
+`M` ouvre l'hôtel de vente. Chacun y dépose ses objets **au prix qu'il fixe lui-même**, les autres achètent à ce prix. Pas de prix imposé, pas de négociation — pour marchander, il y a les échanges.
+
+**La monnaie est la bourse du compte**, pas un objet du sac. Deux conséquences qui font tout marcher : un vendeur **déconnecté est payé quand même** (il retrouve son or à la reconnexion, avec n'importe quelle classe), et l'or ne peut ni être volé au sol ni bloquer une case d'inventaire. Un compte neuf démarre à `MARKET.startingGold`. Les pièces d'or ramassées se versent en bourse depuis l'onglet Vendre (`MARKET.coinValue` chacune) — c'est ce qui donne enfin un usage au butin le plus courant.
+
+**Séquestre.** Mettre en vente retire immédiatement les objets du sac : ils vivent dans l'annonce, jamais à deux endroits. Impossible de vendre le même cristal à trois personnes ou de le jeter au sol après l'avoir mis en vitrine. Retirer son annonce les rend — et le retrait est refusé si le sac n'a plus la place, plutôt que de les perdre.
+
+**Ce que le serveur refuse** (rien n'est décidé côté client) : vendre un artefact de classe, un prix hors de `1 … MARKET.maxPrice`, plus de `MARKET.maxPerAccount` annonces par compte, acheter sa propre annonce, acheter sans la bourse suffisante ou sans place dans le sac, retirer l'annonce d'un autre. L'or est débité **avant** d'être crédité au vendeur : si la bourse a bougé entre-temps, rien ne se passe.
+
+**Les annonces persistent** dans `data/market.json` (même stockage atomique que les comptes) et survivent aux redémarrages. Au chargement, une annonce dont le type a disparu du catalogue ou dont le compte vendeur n'existe plus est écartée : mieux vaut perdre les objets séquestrés que servir une annonce inachetable.
+
+**Rafraîchissement.** Chaque action renvoie à son auteur son sac et l'état du marché, et diffuse un `market:changed` léger aux autres — leur fenêtre ne se recharge que si elle est ouverte. Le vendeur en ligne est prévenu de sa vente dans le canal Info et sa bourse se met à jour immédiatement.
+
+`value` dans `server/items.js` n'est qu'un **prix indicatif** proposé au vendeur dans le formulaire. Il ne contraint rien.
 
 ## Le chat
 

@@ -33,6 +33,8 @@
       <div class="stat">Joueurs <b id="playerCount">0</b></div>
       <div class="stat">Latence <b id="ping">—</b> ms</div>
       <div class="stat">Ramassés <b id="pickups">0</b></div>
+      <div class="stat">Bourse <b id="gold">0</b> or</div>
+      <button class="panel-btn" id="marketBtn" type="button">Hôtel de vente <span>M</span></button>
     </div>
     <div class="panel">
       <h2>Sur le terrain</h2>
@@ -65,6 +67,49 @@
     <button class="chat-channel" id="chatChannel" type="button">Général</button>
     <input id="chatInput" type="text" maxlength="256" placeholder="Entrée pour parler…" autocomplete="off" spellcheck="false">
     <button class="chat-send" id="chatSend" type="button" title="Envoyer">➤</button>
+  </div>
+</div>
+
+<div class="market-modal" id="marketModal" hidden>
+  <div class="market-card">
+    <div class="market-head">
+      <h2>Hôtel de vente</h2>
+      <div class="market-purse">Bourse <b id="marketGold">0</b> or</div>
+      <button class="mini decline" id="marketCloseBtn" type="button">Fermer</button>
+    </div>
+
+    <div class="market-tabs">
+      <button class="market-tab active" data-tab="buy" type="button">Acheter</button>
+      <button class="market-tab" data-tab="sell" type="button">Vendre</button>
+      <button class="market-tab" data-tab="mine" type="button">Mes annonces <span id="marketMineCount"></span></button>
+    </div>
+
+    <div class="market-error" id="marketError"></div>
+
+    <!-- Acheter -->
+    <section class="market-pane" id="marketPaneBuy">
+      <input id="marketSearch" type="text" placeholder="Filtrer par objet ou vendeur…" autocomplete="off">
+      <div class="market-list" id="marketListings"></div>
+    </section>
+
+    <!-- Vendre -->
+    <section class="market-pane" id="marketPaneSell" hidden>
+      <p class="market-hint">Choisis un objet de ton sac, fixe ton prix : il quitte ton sac et reste à toi tant que personne ne l'achète.</p>
+      <div class="market-list compact" id="marketBag"></div>
+      <div class="market-form" id="marketForm" hidden>
+        <div class="market-form-item"><span class="gem" id="marketFormGem"></span><b id="marketFormName">—</b></div>
+        <label>Quantité <input id="marketQty" type="number" min="1" value="1"></label>
+        <label>Prix unitaire <input id="marketPrice" type="number" min="1" value="1"></label>
+        <div class="market-total">Total <b id="marketTotal">0</b> or <span class="market-hint-inline" id="marketSuggest"></span></div>
+        <button class="action" id="marketSellBtn" type="button">Mettre en vente</button>
+      </div>
+      <button class="mini" id="marketCashBtn" type="button">Déposer mes pièces d'or en bourse</button>
+    </section>
+
+    <!-- Mes annonces -->
+    <section class="market-pane" id="marketPaneMine" hidden>
+      <div class="market-list" id="marketMine"></div>
+    </section>
   </div>
 </div>
 
@@ -130,7 +175,8 @@
     <div class="note">Déplacements : ZQSD / WASD / flèches — joystick tactile sur mobile.<br>
       Marche sur un objet pour le ramasser. Murs, autels et jarres bloquent le passage.<br>
       Chat : <b>Entrée</b> pour parler, <b>Tab</b> pour changer de canal, <b>/help</b> pour les commandes.<br>
-      Approche-toi de la grande porte, en haut de la salle, et appuie sur <b>E</b> pour l'ouvrir.</div>
+      Approche-toi de la grande porte, en haut de la salle, et appuie sur <b>E</b> pour l'ouvrir.<br>
+      <b>M</b> ouvre l'hôtel de vente : mets tes objets au prix que tu veux, achète ceux des autres.</div>
     <button class="link" id="logoutBtn" hidden type="button">Changer de compte</button>
   </div>
 </div>

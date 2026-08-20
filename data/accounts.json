@@ -1,4 +1,110 @@
 {
-  "users": {},
+  "users": {
+    "4fcc8c40-2efd-4011-b77f-4a670b66745a": {
+      "id": "4fcc8c40-2efd-4011-b77f-4a670b66745a",
+      "username": "vvsvd",
+      "passHash": "$2a$10$NMxbqmQW39AvsA7JIMS0/.GuqrXjGCPaQOgtp4h60U6cRtTVqImaO",
+      "color": "#4ade80",
+      "createdAt": 1787244279617,
+      "lastSeen": 1787251937945,
+      "lastClass": "archer",
+      "classes": {
+        "archer": {
+          "position": {
+            "x": 798.91,
+            "y": 367.74,
+            "angle": 1.571
+          },
+          "inventory": [
+            {
+              "type": "arc_long_if",
+              "qty": 1
+            },
+            {
+              "type": "carquois_sans_fond",
+              "qty": 1
+            },
+            {
+              "type": "oeil_faucon",
+              "qty": 1
+            },
+            {
+              "type": "piece_or",
+              "qty": 2
+            },
+            {
+              "type": "potion",
+              "qty": 7
+            },
+            {
+              "type": "torche",
+              "qty": 6
+            },
+            {
+              "type": "champignon",
+              "qty": 6
+            },
+            {
+              "type": "cristal",
+              "qty": 1
+            },
+            null,
+            null,
+            null,
+            null
+          ],
+          "equipment": {
+            "arme": null,
+            "relique": null,
+            "talisman": null
+          },
+          "stats": {
+            "playtimeMs": 448065,
+            "pickups": 24,
+            "sessions": 4,
+            "distance": 14007
+          },
+          "createdAt": 1787244280371
+        },
+        "barbare": {
+          "position": {
+            "x": 829.94,
+            "y": 485.27,
+            "angle": 1.571
+          },
+          "inventory": [
+            null,
+            null,
+            null,
+            {
+              "type": "piece_or",
+              "qty": 1
+            },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "equipment": {
+            "arme": "hache_sanglante",
+            "relique": "ceinture_force",
+            "talisman": "totem_rage"
+          },
+          "stats": {
+            "playtimeMs": 252963,
+            "pickups": 1,
+            "sessions": 2,
+            "distance": 1831
+          },
+          "createdAt": 1787244400669
+        }
+      },
+      "gold": 250
+    }
+  },
   "secret": "0de7f5afae67c689ce66370c3d6a766e210ef168a588a2ee6d9996579e19a89a"
 }
