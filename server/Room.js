@@ -1,13 +1,20 @@
 const crypto = require('crypto');
 const CONFIG = require('./config');
 const DungeonMap = require('./map');
+const Crypt = require('./map2');
 const Inventory = require('./inventory');
 const Classes = require('./classes');
 const { ITEMS, randomType, isValidType, isDroppable } = require('./items');
 
+/** La carte a utiliser pour un joueur donne : 'room1' (spawn) ou 'room2' (crypte). */
+function zoneMap(zone) {
+  return zone === 'room2' ? Crypt : DungeonMap;
+}
+
 /**
- * Une salle = la carte de donjon (server/map.js) + les joueurs et le butin dessus.
- * Le serveur est autoritatif : positions et inventaires vivent ici, le client predit.
+ * Une salle = les deux cartes du donjon (server/map.js, server/map2.js) + les
+ * joueurs et le butin dessus. Le serveur est autoritatif : positions et
+ * inventaires vivent ici, le client predit.
  */
 class Room {
   constructor(id) {
@@ -62,6 +69,7 @@ class Room {
       color: Classes.CLASSES[classId].color,   // couleur de la classe
       tint: profile.color,                      // couleur du compte : distingue deux joueurs de la meme classe
       equipment,
+      zone: 'room1',        // on arrive toujours par la salle de spawn
       x: spawn.x,
       y: spawn.y,
       dx: 0,
@@ -86,8 +94,9 @@ class Room {
     return player;
   }
 
-  /** Le joueur est-il assez pres du mecanisme pour l'actionner ? */
+  /** Le joueur est-il assez pres du mecanisme pour l'actionner ? (uniquement dans la salle de spawn) */
   canReachDoor(player) {
+    if (player.zone !== 'room1') return false;
     const u = DungeonMap.DOOR.use;
     return Math.hypot(player.x - u.x, player.y - u.y) <= u.range;
   }
@@ -132,6 +141,39 @@ class Room {
     return { at: this.doorAt };
   }
 
+  /** La porte de la salle de spawn est-elle actuellement franchissable ? */
+  isDoorPassable() {
+    const elapsed = Date.now() - this.doorAt;
+    return elapsed >= DungeonMap.DOOR.passableFrom && elapsed < DungeonMap.DOOR.passableUntil;
+  }
+
+  /**
+   * Fait passer un joueur d'une salle a l'autre s'il vient de franchir un
+   * seuil : l'arche du haut de la salle de spawn (seulement quand la porte
+   * est ouverte, verifie plus haut par isDoorPassable/le mur carve dans
+   * map.js), ou le passage sud de la crypte (toujours ouvert).
+   */
+  checkZoneTransition(player) {
+    if (player.zone === 'room1') {
+      const arch = DungeonMap.DOOR.arch;
+      if (player.y <= 28 && player.x >= arch.x - arch.r && player.x <= arch.x + arch.r) {
+        player.zone = 'room2';
+        const free = Crypt.nearestFree(Crypt.ENTRY.x, Crypt.ENTRY.y, CONFIG.PLAYER.radius);
+        player.x = free.x;
+        player.y = free.y;
+      }
+    } else if (player.zone === 'room2') {
+      const gate = Crypt.GATE;
+      if (player.y >= Crypt.HEIGHT - 24 && player.x >= gate.x0 && player.x <= gate.x1) {
+        player.zone = 'room1';
+        const arch = DungeonMap.DOOR.arch;
+        const free = DungeonMap.nearestFree(arch.x, DungeonMap.FLOOR.y0 + 46, CONFIG.PLAYER.radius);
+        player.x = free.x;
+        player.y = free.y;
+      }
+    }
+  }
+
   remove(socketId) {
     const player = this.players.get(socketId);
     this.players.delete(socketId);
@@ -172,27 +214,31 @@ class Room {
   }
 
   /** Applique une commande. Le client execute exactement la meme chose en prediction. */
-  static applyInput(player, cmd) {
+  applyInput(player, cmd) {
     let { ax, ay } = cmd;
     const len = Math.hypot(ax, ay);
     if (len > 1) { ax /= len; ay /= len; }
 
     const speed = (player.attrs && player.attrs.speed) || CONFIG.PLAYER.speed;
+    const map = zoneMap(player.zone);
+    // Seule la salle de spawn a un mur a etat (l'arche, ouverte ou non) ;
+    // la crypte ignore ce 4e argument.
+    const doorOpen = player.zone === 'room1' && this.isDoorPassable();
     // Murs et mobilier de la salle : deplacement axe par axe, on glisse le long
     // des obstacles au lieu de s'y coller net.
-    DungeonMap.move(player, ax * speed * cmd.dt, ay * speed * cmd.dt, CONFIG.PLAYER.radius);
+    map.move(player, ax * speed * cmd.dt, ay * speed * cmd.dt, CONFIG.PLAYER.radius, doorOpen);
     player.dx = ax;
     player.dy = ay;
     if (len > 0.01) player.angle = Math.atan2(ay, ax);
   }
 
   /** Repousse une entite hors des murs (utilise apres une separation de joueurs). */
-  static clampToWorld(entity, radius = CONFIG.PLAYER.radius) {
-    const { width, height } = CONFIG.WORLD;
-    entity.x = Math.max(radius, Math.min(width - radius, entity.x));
-    entity.y = Math.max(radius, Math.min(height - radius, entity.y));
-    if (DungeonMap.blocked(entity.x, entity.y, radius)) {
-      const free = DungeonMap.nearestFree(entity.x, entity.y, radius);
+  static clampToWorld(entity, radius = CONFIG.PLAYER.radius, zone = 'room1') {
+    const map = zoneMap(zone);
+    entity.x = Math.max(radius, Math.min(map.WIDTH - radius, entity.x));
+    entity.y = Math.max(radius, Math.min(map.HEIGHT - radius, entity.y));
+    if (map.blocked(entity.x, entity.y, radius)) {
+      const free = map.nearestFree(entity.x, entity.y, radius);
       entity.x = free.x;
       entity.y = free.y;
     }
@@ -201,11 +247,13 @@ class Room {
   // --- Butin ------------------------------------------------------------
   spawnLoot() {
     // Le butin tombe sur la dalle, jamais dans un mur ni sous un autel.
+    // Pour l'instant il ne tombe que dans la salle de spawn.
     const spot = DungeonMap.randomFree(24);
     const item = {
       id: crypto.randomBytes(6).toString('hex'),
       type: randomType(),
       qty: 1,
+      zone: 'room1',
       x: spot.x,
       y: spot.y,
       pickupAfter: 0
@@ -233,13 +281,15 @@ class Room {
 
     // Devant le joueur si c'est degage, a ses pieds sinon : un objet jete ne
     // doit jamais finir de l'autre cote d'un mur.
+    const map = zoneMap(player.zone);
     const ahead = { x: player.x + Math.cos(player.angle) * 34, y: player.y + Math.sin(player.angle) * 34 };
-    const spot = DungeonMap.blocked(ahead.x, ahead.y, 12) ? { x: player.x, y: player.y } : ahead;
+    const spot = map.blocked(ahead.x, ahead.y, 12) ? { x: player.x, y: player.y } : ahead;
 
     const item = {
       id: crypto.randomBytes(6).toString('hex'),
       type,
       qty: 1,
+      zone: player.zone,
       x: spot.x,
       y: spot.y,
       pickupAfter: Date.now() + CONFIG.INVENTORY.dropCooldownMs
@@ -310,6 +360,7 @@ class Room {
     const luck = (player.attrs && player.attrs.luck) || 0;
 
     for (const item of this.ground.values()) {
+      if ((item.zone || 'room1') !== player.zone) continue;
       if (now < item.pickupAfter) continue;
       if (Math.hypot(item.x - player.x, item.y - player.y) > reach) continue;
 
@@ -355,7 +406,7 @@ class Room {
         const cmd = player.pending[i];
         if (cmd.dt > player.dtBudget) break; // budget epuise : on reprendra au prochain tick
         player.dtBudget -= cmd.dt;
-        Room.applyInput(player, cmd);
+        this.applyInput(player, cmd);
         player.lastSeq = cmd.seq;
         moved = true;
       }
@@ -363,6 +414,7 @@ class Room {
       if (!moved) { player.dx = 0; player.dy = 0; }
       else player.stats.distance = Math.round((player.stats.distance || 0) + Math.hypot(player.x - from.x, player.y - from.y));
 
+      if (moved) this.checkZoneTransition(player);
       this.collectLoot(player);
     }
 
@@ -382,6 +434,8 @@ class Room {
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
         const a = list[i], b = list[j];
+        if (a.zone !== b.zone) continue; // deux salles differentes : jamais l'un sur l'autre
+
         let dx = b.x - a.x, dy = b.y - a.y;
         let dist = Math.hypot(dx, dy);
         if (dist === 0) { dx = 0.01; dy = 0; dist = 0.01; }
@@ -391,8 +445,8 @@ class Room {
         const nx = dx / dist, ny = dy / dist;
         a.x -= nx * push; a.y -= ny * push;
         b.x += nx * push; b.y += ny * push;
-        Room.clampToWorld(a);
-        Room.clampToWorld(b);
+        Room.clampToWorld(a, CONFIG.PLAYER.radius, a.zone);
+        Room.clampToWorld(b, CONFIG.PLAYER.radius, b.zone);
       }
     }
   }
@@ -412,6 +466,7 @@ class Room {
         c: p.color,
         c2: p.tint,
         k: p.classId,
+        z: p.zone,
         x: Math.round(p.x * 100) / 100,
         y: Math.round(p.y * 100) / 100,
         a: Math.round(p.angle * 100) / 100,
@@ -423,7 +478,7 @@ class Room {
 
     const items = [];
     for (const it of this.ground.values()) {
-      items.push({ id: it.id, t: it.type, x: Math.round(it.x), y: Math.round(it.y) });
+      items.push({ id: it.id, t: it.type, z: it.zone || 'room1', x: Math.round(it.x), y: Math.round(it.y) });
     }
 
     return { t: Date.now(), tick: this.tick, players, items };

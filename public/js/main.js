@@ -11,7 +11,11 @@ const input = new Input();
 const chat = new Chat();
 const market = new Market();
 let renderer = null;
-let collision = null;          // grille de collision de la salle (recue avec la config)
+let maps = null;               // { room1, room2 } : donnees de carte recues avec la config
+let collisions = null;         // { room1, room2 } : une instance Collision par salle
+let collision = null;          // raccourci vers collisions[zone]
+let zone = 'room1';            // salle ou se trouve le joueur local
+let zoneTransitioning = false; // un fondu de changement de salle est en cours (voir reconcile)
 
 const INPUT_STEP = 1 / 30;      // 30 commandes / seconde envoyees au serveur
 let inputAcc = 0;
@@ -48,8 +52,10 @@ function applyInput(entity, cmd, config) {
 
   if (collision) {
     // Memes murs que le serveur : sans ca, la prediction traverse le mobilier
-    // puis se fait ramener en arriere a chaque snapshot.
-    collision.move(entity, ax * speed * cmd.dt, ay * speed * cmd.dt, r);
+    // puis se fait ramener en arriere a chaque snapshot. Seule la salle de
+    // spawn a une porte a etat ; isDoorPassable() vaut toujours faux ailleurs.
+    const doorOpen = zone === 'room1' && isDoorPassable();
+    collision.move(entity, ax * speed * cmd.dt, ay * speed * cmd.dt, r, doorOpen);
   } else {
     entity.x += ax * speed * cmd.dt;
     entity.y += ay * speed * cmd.dt;
@@ -58,6 +64,14 @@ function applyInput(entity, cmd, config) {
   }
 
   if (len > 0.01) entity.angle = Math.atan2(ay, ax);
+}
+
+/** Le mur du haut de la salle de spawn est-il actuellement franchissable ? */
+function isDoorPassable() {
+  if (!doorAt || !maps || !maps.room1.door) return false;
+  const elapsed = Date.now() + net.clockOffset - doorAt;
+  const d = maps.room1.door;
+  return elapsed >= d.passableFrom && elapsed < d.passableUntil;
 }
 
 // --- Ecran de connexion ------------------------------------------------
@@ -177,8 +191,11 @@ net.onWelcome = (data) => {
   catalog = catalog || { classes: data.classes, slots: data.equipSlots, labels: data.slotLabels };
   dropStarts.set(data.id, performance.now());
 
-  collision = new Collision(data.config.MAP);
-  renderer = new Renderer(el('stage'), data.config, data.items, data.classes);
+  maps = data.config.MAPS;
+  collisions = { room1: new Collision(maps.room1), room2: new Collision(maps.room2) };
+  zone = (data.you && data.you.z) || 'room1';
+  collision = collisions[zone];
+  renderer = new Renderer(el('stage'), data.config, data.items, data.classes, maps[zone]);
   // Un joueur qui arrive pendant la sequence la reprend en cours de route.
   doorAt = (data.door && data.door.at) || 0;
   renderer.centerOn(self.x, self.y);
@@ -484,7 +501,7 @@ function loop(now) {
   reconcile();
 
   const players = buildPlayerList(now);
-  const items = net.latest ? net.latest.items || [] : [];
+  const items = net.latest ? (net.latest.items || []).filter(it => (it.z || 'room1') === zone) : [];
 
   // La porte est animee sur l'horloge serveur : tout le monde la voit bouger
   // au meme instant, quelle que soit sa latence.
@@ -502,8 +519,13 @@ function loop(now) {
  * d'ouvrir une porte qui s'ouvre deja.
  */
 function updateDoorReach(doorElapsed) {
-  const use = net.config.MAP.door.use;
-  const busy = doorElapsed != null && doorElapsed >= 0 && doorElapsed < net.config.MAP.door.duration;
+  // Le mecanisme n'existe que dans la salle de spawn.
+  if (zone !== 'room1') {
+    if (doorReachable) { doorReachable = false; el('doorBtn').hidden = true; }
+    return;
+  }
+  const use = net.config.MAPS.room1.door.use;
+  const busy = doorElapsed != null && doorElapsed >= 0 && doorElapsed < net.config.MAPS.room1.door.duration;
   const near = Math.hypot(self.x - use.x, self.y - use.y) <= use.range;
   const next = near && !busy;
   if (next === doorReachable) return;
@@ -531,6 +553,33 @@ function reconcile() {
   const mine = snap.players.find(p => p.id === net.id);
   if (!mine) return;
 
+  // Le serveur vient de nous faire changer de salle (porte franchie) : plutot
+  // qu'un basculement instantane, on laisse le renderer fermer l'ecran au
+  // noir, et c'est lui qui bascule reellement le decor une fois l'ecran
+  // ferme (voir Renderer.beginZoneTransition) avant de le rouvrir sur la
+  // nouvelle salle. On ne declenche qu'une seule fois : tant que la
+  // transition court, cette branche continue de matcher (mine.z !== zone),
+  // le garde-fou zoneTransitioning evite de la relancer a chaque frame.
+  if (mine.z && mine.z !== zone) {
+    if (!zoneTransitioning) {
+      zoneTransitioning = true;
+      const targetZone = mine.z;
+      const targetX = mine.x, targetY = mine.y, targetAngle = mine.a, targetSeq = mine.seq;
+      renderer.beginZoneTransition(() => {
+        zone = targetZone;
+        collision = collisions[zone];
+        self.x = targetX;
+        self.y = targetY;
+        self.angle = targetAngle;
+        renderer.setZone(maps[zone]);
+        renderer.centerOn(self.x, self.y);
+        pending = pending.filter(cmd => cmd.seq > targetSeq);
+        zoneTransitioning = false;
+      });
+    }
+    return;
+  }
+
   pending = pending.filter(cmd => cmd.seq > mine.seq);
 
   const replayed = { x: mine.x, y: mine.y, angle: mine.a, speed: self.speed };
@@ -554,6 +603,8 @@ function buildPlayerList(now) {
 
   const out = [];
   for (const b of frames.b.players) {
+    // Ne dessiner que les joueurs presents dans la meme salle que nous.
+    if ((b.z || 'room1') !== zone) continue;
     const isSelf = b.id === net.id;
     const a = frames.a.players.find(p => p.id === b.id) || b;
 

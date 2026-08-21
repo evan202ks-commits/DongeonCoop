@@ -47,6 +47,7 @@ class TradeManager {
     const to = this.findPlayer(toId);
     if (!from || !to) return this.error(io, fromId, 'Ce joueur a quitté le terrain.');
     if (from.room !== to.room) return this.error(io, fromId, "Ce joueur n'est pas sur le même terrain.");
+    if (from.player.zone !== to.player.zone) return this.error(io, fromId, "Ce joueur n'est pas dans la même salle.");
 
     const dist = Math.hypot(from.player.x - to.player.x, from.player.y - to.player.y);
     if (dist > CONFIG.TRADE.requestRange) {

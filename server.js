@@ -130,7 +130,7 @@ io.on('connection', (socket) => {
       equipSlots: Classes.EQUIP_SLOTS,
       slotLabels: Classes.SLOT_LABELS,
       you: {
-        x: player.x, y: player.y, angle: player.angle,
+        x: player.x, y: player.y, angle: player.angle, z: player.zone,
         color: player.color, name: player.name,
         classId: player.classId, attrs: player.attrs,
         restored: player.restored, stats: player.stats

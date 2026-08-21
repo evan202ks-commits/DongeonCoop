@@ -69,7 +69,7 @@ const saidTo = (c, needle) => c.chat.some(m => m.text.includes(needle));
   // --- Geometrie livree au client ---------------------------------------
   const far = await play(await register(`porteA${stamp}`), 'mage');
   await wait(200);
-  const door = far.welcome.config.MAP.door;
+  const door = far.welcome.config.MAPS.room1.door;
   check('geometrie de la porte envoyee dans la config',
     !!door && !!door.arch && !!door.wheel && !!door.use,
     door ? `arche r=${door.arch.r} · portee ${door.use.range}` : 'absente');

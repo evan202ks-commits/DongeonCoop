@@ -1,6 +1,12 @@
+// Duree du fondu qui masque un changement de salle : le noir absorbe a la
+// fois le "pop" du changement de decor et le teleport de la position locale.
+const FADE_OUT_MS = 260;    // fermeture des yeux
+const FADE_HOLD_MS = 140;   // temps mini dans le noir, meme si la carte suivante est deja en cache
+const FADE_IN_MS = 340;     // ouverture des yeux, un peu plus lente pour ne pas eblouir
+
 // Rendu 2D vue de dessus : salle de donjon (image de fond), butin, joueurs.
 export class Renderer {
-  constructor(canvas, config, items = {}, classes = {}) {
+  constructor(canvas, config, items = {}, classes = {}, map = config.MAPS.room1) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.config = config;
@@ -9,13 +15,14 @@ export class Renderer {
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.camera = { x: 0, y: 0 };
     this.iconCache = new Map(); // src -> { img, ready }
-    this.map = config.MAP;
+    this.map = map;
     this.debug = false;         // F2 : superpose la grille de collision
 
     // Image de la salle : elle sert de sol, de murs et de decor. Tant qu'elle
     // n'est pas chargee, on peint un aplat sombre pour eviter le flash blanc.
     // La porte du haut est peinte dans la carte : ses battants en sont
     // redecoupes une fois pour toutes (buildDoor), pour pouvoir les ecarter.
+    // La crypte (salle 2) n'a pas de porte a etat : this.door y reste null.
     this.door = this.map.door;
     this.doorLeaf = null;
     this.doorWheel = null;
@@ -26,6 +33,11 @@ export class Renderer {
     this.roomReady = false;
     this.room.onload = () => { this.roomReady = true; this.buildDoor(); };
     this.room.src = this.map.image;
+
+    // Fondu de transition entre deux salles : null au repos, sinon
+    // { phase: 'out'|'hold'|'in', onSwap, ... horodatages }. Voir beginZoneTransition.
+    this.transition = null;
+    this.fadeAlpha = 0;
 
     // Planche des flammes : 8 images cote a cote, fond transparent. Les
     // flammes ont ete effacees de l'image de la salle, ce sont celles-ci qui
@@ -38,6 +50,91 @@ export class Renderer {
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
+  }
+
+  /**
+   * Bascule sur une autre salle (franchissement de porte) : recharge le
+   * decor, les flammes, et reconstruit la porte si celle de la nouvelle
+   * salle en a une. Ne fait rien si on est deja sur cette carte.
+   */
+  setZone(map) {
+    if (this.map === map) return;
+    this.map = map;
+    this.door = map.door || null;
+    this.doorLeaf = null;
+    this.doorWheel = null;
+    this.doorGlow = 0;
+    this.doorPrompt = 0;
+    this._gridLines = null;
+
+    this.roomReady = false;
+    this.room = new Image();
+    this.room.onload = () => { this.roomReady = true; this.buildDoor(); };
+    this.room.src = map.image;
+
+    this.flameSprite = map.flameSprite;
+    this.flamesReady = false;
+    this.flames = new Image();
+    this.flames.onload = () => { this.flamesReady = true; };
+    this.flames.src = this.flameSprite.image;
+  }
+
+  /**
+   * Demarre un changement de salle en fondu plutot qu'un basculement brut :
+   * l'ecran se ferme au noir, `onSwap` (qui appelle setZone + recentre la
+   * camera sur la nouvelle position) ne s'execute qu'une fois l'ecran
+   * entierement noir, puis l'ecran se rouvre sur le nouveau decor. Le noir
+   * est aussi retenu tant que la nouvelle image n'est pas chargee : le
+   * joueur ne voit jamais l'aplat de fond ni un decor a moitie pret.
+   * Sans effet si une transition est deja en cours.
+   */
+  beginZoneTransition(onSwap) {
+    if (this.transition) return;
+    this.transition = { phase: 'out', outStart: performance.now(), onSwap };
+  }
+
+  /** Fait avancer le fondu d'une image a l'autre ; declenche onSwap au bon moment. */
+  updateTransition(now) {
+    const tr = this.transition;
+    if (!tr) { this.fadeAlpha = 0; return; }
+
+    if (tr.phase === 'out') {
+      const p = Math.min(1, (now - tr.outStart) / FADE_OUT_MS);
+      this.fadeAlpha = p;
+      if (p >= 1) {
+        tr.onSwap();               // bascule reellement de salle, ecran deja noir
+        tr.phase = 'hold';
+        tr.holdStart = now;
+      }
+      return;
+    }
+
+    if (tr.phase === 'hold') {
+      this.fadeAlpha = 1;
+      const held = now - tr.holdStart;
+      const ready = this.roomReady && this.flamesReady;
+      if (held >= FADE_HOLD_MS && ready) {
+        tr.phase = 'in';
+        tr.inStart = now;
+      }
+      return;
+    }
+
+    // phase 'in'
+    const p = Math.min(1, (now - tr.inStart) / FADE_IN_MS);
+    this.fadeAlpha = 1 - p;
+    if (p >= 1) this.transition = null;
+  }
+
+  /** Voile plein ecran par-dessus tout le reste : coordonnees ecran, pas monde. */
+  drawFade() {
+    if (this.fadeAlpha <= 0.001) return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, this.fadeAlpha);
+    ctx.fillStyle = '#070512';
+    ctx.fillRect(0, 0, this.view.w, this.view.h);
+    ctx.restore();
   }
 
   /** Charge (et met en cache) l'icone d'un objet ; renvoie l'image des qu'elle est prete. */
@@ -69,7 +166,7 @@ export class Renderer {
     c.clip();
     c.imageSmoothingEnabled = false;
     if (source) c.drawImage(source, from.x - box.x, from.y - box.y);
-    else c.drawImage(this.room, -box.x, -box.y, this.config.WORLD.width, this.config.WORLD.height);
+    else c.drawImage(this.room, -box.x, -box.y, this.map.width, this.map.height);
     c.restore();
     return cv;
   }
@@ -80,6 +177,7 @@ export class Renderer {
    * donc il se recouvre exactement lui-meme, sans coin transparent a rattraper.
    */
   buildDoor() {
+    if (!this.door) return; // cette salle n'a pas de mecanisme (ex. la crypte)
     const { arch, wheel } = this.door;
     this.doorBox = {
       x: arch.x - arch.r - 2,
@@ -125,7 +223,7 @@ export class Renderer {
    */
   doorState(elapsed) {
     const d = this.door;
-    if (elapsed == null || elapsed < 0 || elapsed > d.duration) return null;
+    if (!d || elapsed == null || elapsed < 0 || elapsed > d.duration) return null;
 
     const T = d.timing;
     const turn = (d.wheel.turn * Math.PI) / 180;
@@ -242,6 +340,7 @@ export class Renderer {
    * sinon elle clignote des qu'on longe la limite de portee.
    */
   drawDoorPrompt(active, now) {
+    if (!this.door) return; // pas de mecanisme dans cette salle
     this.doorPrompt += ((active ? 1 : 0) - this.doorPrompt) * 0.16;
     if (this.doorPrompt < 0.02) return;
 
@@ -299,13 +398,18 @@ export class Renderer {
   }
 
   centerOn(x, y) {
-    const { width, height } = this.config.WORLD;
+    const { width, height } = this.map;
     const { w, h } = this.view;
     this.camera.x = w >= width ? (width - w) / 2 : Math.max(0, Math.min(width - w, x - w / 2));
     this.camera.y = h >= height ? (height - h) / 2 : Math.max(0, Math.min(height - h, y - h / 2));
   }
 
   frame(players, items, selfId, now, doorElapsed = null, promptDoor = false) {
+    // Avant tout dessin : fait avancer un eventuel fondu de salle, et bascule
+    // effectivement le decor (setZone + recentrage camera) au moment ou
+    // l'ecran est noir, pour que le changement ne se voie jamais.
+    this.updateTransition(now);
+
     const ctx = this.ctx;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.view.w, this.view.h);
@@ -334,11 +438,15 @@ export class Renderer {
     if (this.debug) this.drawCollision();
 
     ctx.restore();
+
+    // Le voile de transition est en coordonnees ecran : il doit rester au-dessus
+    // du monde translate par la camera, donc dessine apres le restore().
+    this.drawFade();
   }
 
   drawGround() {
     const ctx = this.ctx;
-    const { width, height } = this.config.WORLD;
+    const { width, height } = this.map;
 
     ctx.fillStyle = '#453849';              // teinte du pourtour de la salle
     ctx.fillRect(0, 0, width, height);

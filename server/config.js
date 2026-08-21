@@ -1,20 +1,27 @@
 // Configuration partagee : le serveur l'envoie au client a la connexion,
 // pour eviter d'avoir deux sources de verite qui divergent.
 const MapData = require('./map');
+const MapData2 = require('./map2');
 
 const CONFIG = {
   TICK_HZ: 30,          // pas de simulation serveur
   SNAPSHOT_HZ: 20,      // frequence d'envoi de l'etat aux clients
 
+  // Le monde est mesure sur la salle de spawn : les joueurs y arrivent
+  // toujours en premier, c'est elle qui sert de reference pour le repli
+  // hors-ligne du client (voir applyInput sans collision dans main.js).
   WORLD: {
-    width: MapData.WIDTH,   // le monde fait exactement la taille de l'image de la salle
-    height: MapData.HEIGHT, // 1 unite monde = 1 pixel de salle-donjon.png
+    width: MapData.WIDTH,
+    height: MapData.HEIGHT,
     tile: MapData.CELL
   },
 
-  // Salle de donjon : image de fond, grille de collision, lumieres, depots.
-  // Tout se regle dans server/map.js.
-  MAP: MapData.clientData(),
+  // Salles du donjon : image de fond, grille de collision, lumieres, depots.
+  // Tout se regle dans server/map.js (spawn) et server/map2.js (crypte).
+  MAPS: {
+    room1: MapData.clientData(),
+    room2: MapData2.clientData()
+  },
 
   PLAYER: {
     radius: 18,

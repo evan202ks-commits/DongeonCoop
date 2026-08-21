@@ -176,8 +176,8 @@ async function walkToLoot(client, wanted = 1, tries = 80) {
     !DungeonMap.blocked(a.spawn.x, a.spawn.y, CONFIG.PLAYER.radius));
 
   // --- Feux de la salle ---
-  const sprite = a.welcome.config.MAP.flameSprite;
-  const flames = a.welcome.config.MAP.flames;
+  const sprite = a.welcome.config.MAPS.room1.flameSprite;
+  const flames = a.welcome.config.MAPS.room1.flames;
   check('les 8 feux sont envoyes au client', flames.length === 8, `${flames.length} feux`);
   check('planche de flammes annoncee', sprite.frames === 8 && sprite.width > 0 && sprite.height > 0,
     `${sprite.frames} images de ${sprite.width}x${sprite.height}`);

@@ -134,6 +134,21 @@ DOOR.duration = DOOR.timing.unlock + DOOR.timing.rotate + DOOR.timing.slide
 /** Instant, dans la sequence, ou les deux battants sont entierement ecartes. */
 DOOR.openedAt = DOOR.timing.unlock + DOOR.timing.rotate + DOOR.timing.slide;
 
+/**
+ * Fenetre pendant laquelle on peut effectivement passer : des que les
+ * battants sont ecartes jusqu'a la toute fin de la sequence (fermeture
+ * comprise, pour rester tolerant si quelqu'un se faufile).
+ */
+DOOR.passableFrom = DOOR.openedAt;
+DOOR.passableUntil = DOOR.duration;
+
+/**
+ * Rectangle carve dans le mur du haut quand la porte est ouverte : c'est le
+ * seul moyen d'atteindre la salle suivante (server/map2.js). Il couvre toute
+ * la largeur de l'arche, du sommet de l'image jusqu'au seuil de la dalle.
+ */
+DOOR.passRect = { x0: DOOR.arch.x - DOOR.arch.r, y0: 0, x1: DOOR.arch.x + DOOR.arch.r, y1: FLOOR.y0 };
+
 const COLS = Math.ceil(WIDTH / CELL);
 const ROWS = Math.ceil(HEIGHT / CELL);
 
@@ -163,15 +178,30 @@ function solidAt(col, row) {
   return GRID[row].charCodeAt(col) === 49; // '1'
 }
 
-/** Le joueur est traite comme un carre de cote 2r : glissement propre le long des murs. */
-function blocked(x, y, r) {
+function inDoorPassRect(px, py) {
+  const p = DOOR.passRect;
+  return px >= p.x0 && px < p.x1 && py >= p.y0 && py < p.y1;
+}
+
+/**
+ * Le joueur est traite comme un carre de cote 2r : glissement propre le long des murs.
+ * `doorOpen` (passe par Room.applyInput) leve l'exception du mur du haut sur la
+ * largeur de l'arche pendant que la porte est ecartee — c'est le seul mur
+ * jamais franchissable, tout le reste de SOLIDS reste fixe.
+ */
+function blocked(x, y, r, doorOpen = false) {
   const c0 = Math.floor((x - r) / CELL);
   const c1 = Math.floor((x + r) / CELL);
   const r0 = Math.floor((y - r) / CELL);
   const r1 = Math.floor((y + r) / CELL);
   for (let row = r0; row <= r1; row++) {
     for (let col = c0; col <= c1; col++) {
-      if (solidAt(col, row)) return true;
+      if (!solidAt(col, row)) continue;
+      if (doorOpen) {
+        const px = (col + 0.5) * CELL, py = (row + 0.5) * CELL;
+        if (inDoorPassRect(px, py)) continue;
+      }
+      return true;
     }
   }
   return false;
@@ -183,21 +213,21 @@ function blocked(x, y, r) {
  * Ce code est duplique a l'identique dans public/js/collision.js — les deux
  * copies doivent rester synchronisees, sinon la prediction client derive.
  */
-function sweep(x, y, dx, dy, r) {
+function sweep(x, y, dx, dy, r, doorOpen = false) {
   if (dx === 0 && dy === 0) return 0;
-  if (!blocked(x + dx, y + dy, r)) return 1;
+  if (!blocked(x + dx, y + dy, r, doorOpen)) return 1;
   let lo = 0, hi = 1;
   for (let i = 0; i < 8; i++) {
     const mid = (lo + hi) / 2;
-    if (blocked(x + dx * mid, y + dy * mid, r)) hi = mid; else lo = mid;
+    if (blocked(x + dx * mid, y + dy * mid, r, doorOpen)) hi = mid; else lo = mid;
   }
   return lo;
 }
 
 /** Deplacement complet : X puis Y, chacun bloque independamment. */
-function move(entity, dx, dy, r) {
-  if (dx !== 0) entity.x += dx * sweep(entity.x, entity.y, dx, 0, r);
-  if (dy !== 0) entity.y += dy * sweep(entity.x, entity.y, 0, dy, r);
+function move(entity, dx, dy, r, doorOpen = false) {
+  if (dx !== 0) entity.x += dx * sweep(entity.x, entity.y, dx, 0, r, doorOpen);
+  if (dy !== 0) entity.y += dy * sweep(entity.x, entity.y, 0, dy, r, doorOpen);
   entity.x = Math.max(r, Math.min(WIDTH - r, entity.x));
   entity.y = Math.max(r, Math.min(HEIGHT - r, entity.y));
 }
