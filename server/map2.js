@@ -38,6 +38,15 @@ const SOLIDS = [
   [88, 234, 132, 280],
   [1383, 236, 1427, 282],
 
+  // --- Les quatre fosses en creux -------------------------------------------
+  // Le sol s'interrompt dans chacun des quatre quartiers : sans obstacle ici,
+  // rien n'empeche d'y marcher a plat. Rectangle englobant releve sur l'image
+  // (marges de securite comprises, la fosse a un contour en escalier).
+  [440, 365, 717, 504],   // fosse haut gauche
+  [798, 360, 1078, 503],  // fosse haut droite
+  [440, 590, 718, 730],   // fosse bas gauche
+  [799, 592, 1077, 730],  // fosse bas droite
+
   // --- Les quatre autels / brasiers ----------------------------------------
   [497, 242, 583, 398],
   [937, 241, 1023, 397],
